@@ -110,20 +110,13 @@ public class BoundUtil {
         }
 
         Long result = redisTemplate.execute(script, keys, args);
-//        if (result == null) {
-//            if (returnType.isPrimitive()) {
-//                throw new IllegalArgumentException("Lua 脚本返回 null，但期望是基本类型 " + returnType.getName());
-//            }
-//            return null;
-//        }
-
-//        return safeCast(result, returnType);
         return result;
     }
 
     public <T> T executeSpecificScript(DefaultRedisScript<T> script, List<String> keys, Object... args) {
         return redisTemplate.execute(script, keys, args);
     }
+
     /* ========== String（BoundValueOperations） ========== */
     private BoundValueOperations<String, Object> boundValue(String key) {
         return redisTemplate.boundValueOps(key);
@@ -186,6 +179,7 @@ public class BoundUtil {
     public Double incrByFloat(String key, double delta) {
         return boundValue(key).increment(delta);
     }
+
     /* ========== List（BoundListOperations） ========== */
     private BoundListOperations<String, Object> boundList(String key) {
         return redisTemplate.boundListOps(key);
@@ -234,6 +228,7 @@ public class BoundUtil {
     public void trim(String key, long start, long end) {
         boundList(key).trim(start, end);
     }
+
     /* ========== Set（BoundSetOperations） ========== */
     private BoundSetOperations<String, Object> boundSet(String key) {
         return redisTemplate.boundSetOps(key);
@@ -272,6 +267,7 @@ public class BoundUtil {
         Object value = boundSet(key).pop();
         return value != null ? safeCast(value, clazz) : null;
     }
+
     /* ========== ZSet（BoundZSetOperations） ========== */
     private BoundZSetOperations<String, Object> boundZSet(String key) {
         return redisTemplate.boundZSetOps(key);
@@ -319,6 +315,7 @@ public class BoundUtil {
     public Long zCard(String key) {
         return boundZSet(key).size();
     }
+
     /* ========== Hash（BoundHashOperations） ========== */
     private BoundHashOperations<String, Object, Object> boundHash(String key) {
         return redisTemplate.boundHashOps(key);
@@ -366,6 +363,7 @@ public class BoundUtil {
     public Long hLen(String key) {
         return boundHash(key).size();
     }
+
     /* ========== 通用 key 管理 ========== */
     public Boolean exists(String key) {
         return redisTemplate.hasKey(key);
@@ -386,6 +384,7 @@ public class BoundUtil {
     public Long delMulti(String... keys) {
         return redisTemplate.delete(Arrays.asList(keys));
     }
+
     /* ========== 便捷方法 ========== */
     // String 类型的便捷方法（保持向后兼容）
     public void setString(String key, String value) {

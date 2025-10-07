@@ -22,4 +22,4 @@ end
 redis.call('ZADD', key, now, member)
 -- 4. 设置过期
 redis.call('PEXPIRE', key, window)
-return limit - cnt
+return 1

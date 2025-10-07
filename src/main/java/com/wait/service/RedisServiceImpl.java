@@ -5,8 +5,10 @@ import com.wait.util.RateLimiter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
@@ -16,7 +18,10 @@ import static com.wait.util.RateLimiter.LIMIT_STR;
 public class RedisServiceImpl {
 
     private static final Logger log = LoggerFactory.getLogger(RedisServiceImpl.class);
+
     @Autowired
+    @Qualifier("slideWindow")
+//    @Qualifier("tokenBucket")
     private RateLimiter rateLimiter;
 
     @Autowired
@@ -33,10 +38,12 @@ public class RedisServiceImpl {
             log.info("get key success, key: {}, value: {}", key, res);
             String rateKey = LIMIT_STR + key;
             Set<String> set = boundUtil.zRange(rateKey, 0, System.currentTimeMillis(), String.class);
-            log.info("key: {}, value: {}", rateKey, set);
+//            log.info("key: {}, value: {}", rateKey, set);
+//            Map<String, Object> bucket = boundUtil.hGetAll(rateKey, String.class, Object.class);
+//            log.info("bucket: {}", bucket);
             return res;
         }
-        log.info("visit at limit rate, return null");
-        return 0;
+//        log.info("visit at limit rate, return null");
+        return 100;
     }
 }

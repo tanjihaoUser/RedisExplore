@@ -4,7 +4,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
@@ -19,6 +18,7 @@ public class LuaScriptConfig {
     private static final Logger log = LoggerFactory.getLogger(LuaScriptConfig.class);
 
     public static final String SLIDE_WINDOW = "slide_window";
+    public static final String TOKEN_BUCKET = "token_bucket";
 
     /**
      * 读取目录下所有脚本，返回map，key是文件名。不支持Object父类，如long型不能转换为Object

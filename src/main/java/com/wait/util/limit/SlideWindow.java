@@ -35,7 +35,7 @@ public class SlideWindow extends RateLimiter {
                 limit, windowMillis, current, id);
 
         if (spare == null) {
-            log.error("限流脚本执行失败, key: {}", key);
+            log.error("execute fail, key: {}", key);
             return -1L;
         }
 
@@ -44,7 +44,7 @@ public class SlideWindow extends RateLimiter {
 //            log.info("请求被限流, key: {}, 时间窗口: {}{}", key, windowSize, unit);
         } else {
             String formattedDate = ZonedDateTime.now().format(formatter);
-            log.info("请求允许, key: {}, 剩余次数: {}, time: {}", key, spare, formattedDate);
+            log.info("request allow, key: {}, spare times: {}, time: {}", key, spare, formattedDate);
         }
 
         return spare;

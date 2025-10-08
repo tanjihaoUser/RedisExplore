@@ -43,7 +43,7 @@ public class TokenBucket extends RateLimiter {
         );
 
         if (allowed == null) {
-            log.error("限流脚本执行失败, key: {}", key);
+            log.error("execute fail, key: {}", key);
             return -1L;
         } else if (allowed == 1L) {
             String formattedDate = ZonedDateTime.now().format(formatter);

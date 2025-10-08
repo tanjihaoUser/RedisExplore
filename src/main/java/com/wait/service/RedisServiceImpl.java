@@ -27,8 +27,8 @@ public class RedisServiceImpl {
     @Autowired
     private BoundUtil boundUtil;
 
-    public String getByKey(String key) {
-        return boundUtil.get(key, String.class);
+    public <T> T getByKey(String key, Class<T> clazz) {
+        return boundUtil.get(key, clazz);
     }
 
     public int getWithLimit(String key, int limit, int interval, TimeUnit unit) {

@@ -54,7 +54,7 @@ public abstract class RateLimiter {
      */
     public boolean allowRequest(String key, int limit, int windowSize, TimeUnit unit) {
         long remaining = tryAcquire(key, limit, windowSize, unit);
-        return remaining == 1L;
+        return remaining > 0L;
     }
 
     /**

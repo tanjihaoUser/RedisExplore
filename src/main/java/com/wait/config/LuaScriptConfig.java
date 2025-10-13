@@ -1,7 +1,6 @@
-package com.wait.util;
+package com.wait.config;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.Resource;
@@ -13,9 +12,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 @Configuration
+@Slf4j
 public class LuaScriptConfig {
-
-    private static final Logger log = LoggerFactory.getLogger(LuaScriptConfig.class);
 
     public static final String SLIDE_WINDOW = "slide_window";
     public static final String TOKEN_BUCKET = "token_bucket";

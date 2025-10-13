@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.wait.mapper.UserBaseMapper">
+
+    <!-- 基础字段映射 -->
+    <resultMap id="BaseResultMap" type="com.wait.entity.domain.UserBase">
+        <id column="id" property="id" />
+        <result column="username" property="username" />
+        <result column="email" property="email" />
+        <result column="phone" property="phone" />
+        <result column="status" property="status" />
+        <result column="user_type" property="userType" />
+        <result column="create_time" property="createTime" />
+        <result column="update_time" property="updateTime" />
+        <result column="last_login_time" property="lastLoginTime" />
+    </resultMap>
+
+    <!-- 根据ID查询用户基础信息 -->
+    <select id="selectById" parameterType="java.lang.Long" resultMap="BaseResultMap">
+        SELECT id, username, email, phone, status, user_type,
+        create_time, update_time, last_login_time
+        FROM user_base
+        WHERE id = #{id} AND status != 0
+    </select>
+
+    <!-- 根据用户名查询 -->
+    <select id="selectByUsername" parameterType="java.lang.String" resultMap="BaseResultMap">
+        SELECT id, username, email, phone, status, user_type,
+        create_time, update_time, last_login_time
+        FROM user_base
+        WHERE username = #{username} AND status != 0
+    </select>
+
+    <!-- 根据邮箱查询 -->
+    <select id="selectByEmail" parameterType="java.lang.String" resultMap="BaseResultMap">
+        SELECT id, username, email, phone, status, user_type,
+        create_time, update_time, last_login_time
+        FROM user_base
+        WHERE email = #{email} AND status != 0
+    </select>
+
+    <!-- 更新最后登录时间 -->
+    <update id="updateLastLoginTime">
+        UPDATE user_base
+        SET last_login_time = NOW()
+        WHERE id = #{userId}
+    </update>
+
+    <!-- 更新用户状态 -->
+    <update id="updateStatus">
+        UPDATE user_base
+        SET status = #{status}, update_time = NOW()
+        WHERE id = #{userId}
+    </update>
+
+    <!-- 统计用户数量 -->
+    <select id="countUsers" resultType="java.lang.Long">
+        SELECT COUNT(*) FROM user_base WHERE status != 0
+    </select>
+
+    <select id="selectByIds" parameterType="java.util.List" resultMap="BaseResultMap">
+        SELECT id, username, email, phone, status, user_type,
+        create_time, update_time, last_login_time
+        FROM user_base
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        AND status != 0
+        ORDER BY
+        <foreach collection="ids" item="id" open="FIELD(id," separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+</mapper>

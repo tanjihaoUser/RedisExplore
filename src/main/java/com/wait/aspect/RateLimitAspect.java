@@ -1,40 +1,32 @@
 package com.wait.aspect;
 
 import com.wait.annotation.RateLimit;
-import com.wait.config.LimitType;
-import com.wait.util.RateLimiter;
+import com.wait.entity.LimitType;
+import com.wait.util.SpelExpressionParserUtil;
+import com.wait.util.limit.RateLimiter;
 import com.wait.util.limit.SlideWindow;
 import com.wait.util.limit.TokenBucket;
+import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
-import org.aspectj.lang.Signature;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
-import org.aspectj.lang.reflect.MethodSignature;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.expression.MethodBasedEvaluationContext;
-import org.springframework.core.DefaultParameterNameDiscoverer;
 import org.springframework.core.annotation.Order;
-import org.springframework.expression.ExpressionParser;
-import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.stereotype.Component;
-import static com.wait.util.RateLimiter.LIMIT_STR;
+import static com.wait.util.limit.RateLimiter.LIMIT_STR;
 
-import java.lang.reflect.Method;
 
 /**
  * 限流切面
  */
 @Aspect
 @Component
+@Slf4j
 @Order(1) // 确保在事务等切面之前执行
 public class RateLimitAspect {
 
-    private static final Logger log = LoggerFactory.getLogger(RateLimitAspect.class);
-
-    private final ExpressionParser parser = new SpelExpressionParser();
-    private final DefaultParameterNameDiscoverer discoverer = new DefaultParameterNameDiscoverer();
+    @Autowired
+    private SpelExpressionParserUtil spelExpressionParserUtil;
 
     @Autowired
     private SlideWindow slideWindow;
@@ -63,7 +55,7 @@ public class RateLimitAspect {
         }
 
         // 解析限流key（支持SpEL表达式）
-        String key = resolveKey(joinPoint, rateLimit);
+        String key = spelExpressionParserUtil.generateCacheKey(joinPoint, rateLimit.key(), LIMIT_STR);
 
         // 获取对应的限流器
         RateLimiter limiter = getRateLimiter(rateLimit.type());
@@ -87,38 +79,6 @@ public class RateLimitAspect {
             throw e;
 //        } finally {
 //            log.info("after invoke...");
-        }
-    }
-
-    /**
-     * 解析限流key，支持SpEL表达式
-     */
-    private String resolveKey(ProceedingJoinPoint joinPoint, RateLimit rateLimit) {
-        String keyExpression = rateLimit.key();
-
-        // 如果key为空，使用默认key（类名+方法名）
-        if (keyExpression.isEmpty()) {
-            MethodSignature signature = (MethodSignature) joinPoint.getSignature();
-            return String.format("%s.%s",
-                    signature.getDeclaringType().getSimpleName(),
-                    signature.getMethod().getName());
-        }
-
-        // 解析SpEL表达式
-        try {
-            MethodSignature signature = (MethodSignature) joinPoint.getSignature();
-            Method method = signature.getMethod();
-            Object[] args = joinPoint.getArgs();
-            Object target = joinPoint.getTarget();
-
-            MethodBasedEvaluationContext context = new MethodBasedEvaluationContext(
-                    target, method, args, discoverer);
-
-            Object value = parser.parseExpression(keyExpression).getValue(context);
-            return value != null ? LIMIT_STR + value : keyExpression;
-        } catch (Exception e) {
-            log.warn("解析SpEL表达式失败: {}, 使用原表达式作为key", keyExpression, e);
-            return keyExpression;
         }
     }
 

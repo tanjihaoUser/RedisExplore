@@ -1,7 +1,7 @@
-package com.wait.util;
+package com.wait.util.limit;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.wait.util.BoundUtil;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.format.DateTimeFormatter;
@@ -10,9 +10,8 @@ import java.util.concurrent.TimeUnit;
 /**
  * 抽象类，脚本默认返回long型值，1表示允许访问
  * */
+@Slf4j
 public abstract class RateLimiter {
-
-    private static final Logger log = LoggerFactory.getLogger(RateLimiter.class);
 
     @Autowired
     protected BoundUtil boundUtil;

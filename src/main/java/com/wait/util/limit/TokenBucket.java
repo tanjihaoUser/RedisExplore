@@ -1,9 +1,7 @@
 package com.wait.util.limit;
 
-import com.wait.util.LuaScriptConfig;
-import com.wait.util.RateLimiter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.wait.config.LuaScriptConfig;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.time.ZonedDateTime;
@@ -17,9 +15,8 @@ import java.util.concurrent.TimeUnit;
  * 可以增加一个参数，区分初始令牌数量和桶容量
  * */
 @Component
+@Slf4j
 public class TokenBucket extends RateLimiter {
-
-    private static final Logger log = LoggerFactory.getLogger(TokenBucket.class);
 
     @Override
     public Long tryAcquire(String key, int limit, int windowSize, TimeUnit unit) {

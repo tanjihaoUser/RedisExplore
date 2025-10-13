@@ -1,7 +1,8 @@
 package com.wait.util;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wait.util.instance.HashMappingUtil;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.BoundHashOperations;
 import org.springframework.data.redis.core.BoundListOperations;
@@ -19,20 +20,19 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
 
 /**
  * 支持任意类型的 Redis 工具类
  * 使用泛型支持多种数据类型，包括 String、Integer、Float、自定义对象等
  */
 @Component
+@Slf4j
 public class BoundUtil {
-
-    private static final Logger log = LoggerFactory.getLogger(BoundUtil.class);
 
     @Autowired
     private StringRedisTemplate stringTemplate;
@@ -42,6 +42,12 @@ public class BoundUtil {
 
     @Autowired
     private Map<String, DefaultRedisScript<Long>> luaScriptMap;
+
+    @Autowired
+    private HashMappingUtil hashMappingUtil;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     // 序列化器
     private final RedisSerializer<String> stringSerializer = RedisSerializer.string();
@@ -89,18 +95,66 @@ public class BoundUtil {
         }
     }
 
+    public Boolean delete(String key) {
+        try {
+            return redisTemplate.delete(key);
+        } catch (Exception e) {
+            log.error("删除key失败, key: {}", key, e);
+            return false;
+        }
+    }
+
     /**
      * 安全类型转换
      */
     @SuppressWarnings("unchecked")
-    private <T> T safeCast(Object obj, Class<T> clazz) {
-        if (obj == null) {
+    private <T> T safeCast(Object value, Class<T> clazz) {
+        if (value == null) {
             return null;
         }
-        if (!clazz.isInstance(obj)) {
-            throw new ClassCastException("类型不匹配: 期望 " + clazz.getName() + ", 实际 " + obj.getClass().getName());
+
+        // 1. 如果类型匹配，直接返回
+        if (clazz.isInstance(value)) {
+            return (T) value;
         }
-        return (T) obj;
+
+        // 2. 如果是String，尝试JSON反序列化
+        if (value instanceof String) {
+            String strValue = (String) value;
+
+            // 检查是否是JSON格式
+            if (isJsonString(strValue)) {
+                try {
+                    return objectMapper.readValue(strValue, clazz);
+                } catch (Exception e) {
+                    log.warn("JSON反序列化失败, 目标类型: {}", clazz.getName(), e);
+                }
+            }
+        }
+
+        // 3. 使用Jackson进行类型转换
+        try {
+            return objectMapper.convertValue(value, clazz);
+        } catch (Exception e) {
+            log.warn("类型转换失败, 值类型: {}, 目标类型: {}",
+                    value.getClass().getName(), clazz.getName(), e);
+
+            // 最后尝试强制转换
+            try {
+                return (T) value;
+            } catch (ClassCastException ex) {
+                throw new RuntimeException("无法将 " + value.getClass() + " 转换为 " + clazz, ex);
+            }
+        }
+    }
+
+    private boolean isJsonString(String str) {
+        if (str == null || str.trim().isEmpty()) {
+            return false;
+        }
+        String trimmed = str.trim();
+        return (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+                (trimmed.startsWith("[") && trimmed.endsWith("]"));
     }
 
     public Long executeScriptByMap(String scriptName, List<String> keys, Object... args) {
@@ -124,6 +178,18 @@ public class BoundUtil {
 
     public <T> void set(String key, T value) {
         boundValue(key).set(value);
+    }
+
+    public <T> void set(String key, T value, long timeout, TimeUnit timeUnit) {
+        try {
+            if (timeout <= 0) {
+                redisTemplate.opsForValue().set(key, value);
+            } else {
+                redisTemplate.opsForValue().set(key, value, timeout, timeUnit);
+            }
+        } catch (Exception e) {
+            log.error("设置缓存失败, key: {}", key, e);
+        }
     }
 
     public <T> T get(String key, Class<T> clazz) {
@@ -329,6 +395,17 @@ public class BoundUtil {
         boundHash(key).putAll(map);
     }
 
+    public <T> void hSetAll(String key, Map<String, T> hashMap, long timeout, TimeUnit timeUnit) {
+        try {
+            redisTemplate.opsForHash().putAll(key, hashMap);
+            if (timeout > 0) {
+                redisTemplate.expire(key, timeout, timeUnit);
+            }
+        } catch (Exception e) {
+            log.error("设置Hash缓存失败, key: {}", key, e);
+        }
+    }
+
     public <K, V> V hGet(String key, K field, Class<V> clazz) {
         Object value = boundHash(key).get(field);
         if (value == null) {
@@ -338,17 +415,21 @@ public class BoundUtil {
         return safeCast(value, clazz);
     }
 
-    public <K, V> Map<K, V> hGetAll(String key, Class<K> keyClass, Class<V> valueClass) {
+    public <T> T hGetAll(String key, Class<T> clazz) {
         Map<Object, Object> map = boundHash(key).entries();
-        if (map == null) return Collections.emptyMap();
-
-        Map<K, V> result = new java.util.HashMap<>();
-        for (Map.Entry<Object, Object> entry : map.entrySet()) {
-            K k = safeCast(entry.getKey(), keyClass);
-            V v = safeCast(entry.getValue(), valueClass);
-            result.put(k, v);
+        if (map == null || map.isEmpty()) {
+            log.debug("Hash key {} not found or empty", key);
+            return null;
         }
-        return result;
+
+        // 将Object,Object的Map转换为String,Object的Map
+        Map<String, Object> stringKeyMap = new HashMap<>();
+        for (Map.Entry<Object, Object> entry : map.entrySet()) {
+            stringKeyMap.put(entry.getKey().toString(), entry.getValue());
+        }
+
+        // 映射为对象
+        return hashMappingUtil.mapToObject(stringKeyMap, clazz);
     }
 
     @SafeVarargs

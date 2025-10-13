@@ -1,9 +1,7 @@
 package com.wait.util.limit;
 
-import com.wait.util.LuaScriptConfig;
-import com.wait.util.RateLimiter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.wait.config.LuaScriptConfig;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.time.ZonedDateTime;
@@ -16,9 +14,8 @@ import java.util.concurrent.atomic.AtomicLong;
  * 特点：窗口初期释放所有容量，可能瞬间卖完
  * */
 @Component
+@Slf4j
 public class SlideWindow extends RateLimiter {
-
-    private static final Logger log = LoggerFactory.getLogger(SlideWindow.class);
 
     private static final AtomicLong COUNTER = new AtomicLong(0); // 静态计数器
 

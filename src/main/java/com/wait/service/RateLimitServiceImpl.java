@@ -1,23 +1,20 @@
 package com.wait.service;
 
 import com.wait.util.BoundUtil;
-import com.wait.util.RateLimiter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.wait.util.limit.RateLimiter;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
-import static com.wait.util.RateLimiter.LIMIT_STR;
+import static com.wait.util.limit.RateLimiter.LIMIT_STR;
 
+@Slf4j
 @Component
-public class RedisServiceImpl {
-
-    private static final Logger log = LoggerFactory.getLogger(RedisServiceImpl.class);
+public class RateLimitServiceImpl {
 
     @Autowired
     @Qualifier("slideWindow")

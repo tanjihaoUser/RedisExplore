@@ -1,7 +1,9 @@
 package com.wait.util;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wait.entity.CacheType;
 import com.wait.util.instance.HashMappingUtil;
+import com.wait.util.instance.InstanceFactory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.BoundHashOperations;
@@ -10,10 +12,7 @@ import org.springframework.data.redis.core.BoundSetOperations;
 import org.springframework.data.redis.core.BoundValueOperations;
 import org.springframework.data.redis.core.BoundZSetOperations;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
-import org.springframework.data.redis.serializer.RedisSerializer;
-import org.springframework.data.redis.serializer.SerializationException;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
@@ -23,6 +22,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
@@ -33,9 +33,6 @@ import java.util.concurrent.TimeUnit;
 @Component
 @Slf4j
 public class BoundUtil {
-
-    @Autowired
-    private StringRedisTemplate stringTemplate;
 
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
@@ -49,59 +46,133 @@ public class BoundUtil {
     @Autowired
     private ObjectMapper objectMapper;
 
-    // 序列化器
-    private final RedisSerializer<String> stringSerializer = RedisSerializer.string();
-    private final RedisSerializer<Object> valueSerializer = RedisSerializer.java();
+    @Autowired
+    private InstanceFactory instanceFactory;
+
+    public static final int NULL_CACHE_TIME = 30; // 空值缓存时间
+    public static final TimeUnit NULL_CACHE_TIME_UNIT = TimeUnit.SECONDS; // 空值缓存时间
+    private final Random random = new Random();
 
     /**
-     * 将对象序列化为字符串
+     * 从缓存获取数据
      */
-    private String serializeValue(Object value) {
-        if (value instanceof String) {
-            return (String) value;
-        }
+    public Object getFromCache(String key, CacheType cacheType, Class<?> clazz) {
+        Object result = null;
         try {
-            byte[] bytes = valueSerializer.serialize(value);
-            return bytes != null ? new String(bytes) : null;
-        } catch (SerializationException e) {
-            log.error("序列化失败: {}", value, e);
-            throw new RuntimeException("序列化失败", e);
+            switch (cacheType) {
+                case STRING:
+                    result = get(key, clazz);
+                    break;
+                case HASH:
+                    result = hGetAll(key, clazz);
+                    break;
+                default:
+                    log.warn("不支持的缓存类型: {}", cacheType);
+                    return null;
+            }
+        } catch (Exception e) {
+            log.warn("缓存读取异常, key: {}", key, e);
+        }
+        return result;
+    }
+
+    /**
+     * 缓存结果
+     */
+    public void cacheResult(String key, Object result, CacheType cacheType, int baseExpire, TimeUnit timeUnit, boolean cacheNull) {
+        try {
+            if (result == null) {
+                if (cacheNull) {
+                    // 缓存空值
+                    cacheNullValue(key, cacheType);
+                }
+                return;
+            }
+
+            // 设置随机过期时间，避免缓存雪崩
+            int randomExpire = getRandomExpire(baseExpire);
+
+            switch (cacheType) {
+                case STRING:
+                    set(key, result, randomExpire, timeUnit);
+                    break;
+                case HASH:
+                    Map<String, Object> hashMap = hashMappingUtil.objectToMap(result);
+                    hSetAll(key, hashMap, randomExpire, timeUnit);
+                    break;
+                default:
+                    log.warn("不支持的缓存类型: {}", cacheType);
+            }
+
+            log.debug("缓存设置成功, key: {}, expire: {}{}", key, randomExpire, timeUnit);
+
+        } catch (Exception e) {
+            log.warn("缓存设置异常, key: {}", key, e);
         }
     }
 
     /**
-     * 将字符串反序列化为指定类型
+     * 缓存空值（使用较短的过期时间）
      */
-    @SuppressWarnings("unchecked")
-    private <T> T deserializeValue(String value, Class<T> clazz) {
-        if (value == null) {
+    private void cacheNullValue(String key, CacheType cacheType) {
+        try {
+
+            switch (cacheType) {
+                case STRING:
+                    set(key, "NULL", NULL_CACHE_TIME, NULL_CACHE_TIME_UNIT);
+                    break;
+                case HASH:
+                    Map<String, String> nullMap = new HashMap<>();
+                    nullMap.put("_null", "true");
+                    hSetAll(key, nullMap, NULL_CACHE_TIME, NULL_CACHE_TIME_UNIT);
+                    break;
+            }
+
+            log.info("空值缓存设置成功, key: {}", key);
+
+        } catch (Exception e) {
+            log.warn("空值缓存设置异常, key: {}", key, e);
+        }
+    }
+
+    /**
+     * 获取随机过期时间（防雪崩）
+     */
+    private int getRandomExpire(int baseExpire) {
+        // 在基础过期时间上增加随机偏移（±20%）
+        int offset = (int) (baseExpire * 0.2);
+        int randomOffset = random.nextInt(offset * 2) - offset;
+        return Math.max(1, baseExpire + randomOffset); // 确保不小于1
+    }
+
+    /**
+     * 创建空实例
+     */
+    private Object createEmptyInstance(Class<?> clazz) {
+        try {
+            return instanceFactory.createInstanceSafely(clazz);
+        } catch (Exception e) {
+            log.warn("创建空实例失败: {}", clazz.getName(), e);
             return null;
         }
-        // 如果是 String 类型，直接返回
-        if (clazz.equals(String.class)) {
-            return (T) value;
-        }
-
-        try {
-            byte[] bytes = value.getBytes();
-            Object result = valueSerializer.deserialize(bytes);
-            if (result != null && !clazz.isInstance(result)) {
-                throw new ClassCastException("类型不匹配: 期望 " + clazz.getName() + ", 实际 " + result.getClass().getName());
-            }
-            return (T) result;
-        } catch (SerializationException e) {
-            log.error("反序列化失败: {}", value, e);
-            throw new RuntimeException("反序列化失败", e);
-        }
     }
 
-    public Boolean delete(String key) {
-        try {
-            return redisTemplate.delete(key);
-        } catch (Exception e) {
-            log.error("删除key失败, key: {}", key, e);
-            return false;
+    /**
+     * 判断是否为空值标记
+     */
+    private boolean isNullMarker(Object value) {
+        if (value == null) return false;
+
+        if (value instanceof String) {
+            return "NULL".equals(value);
         }
+
+        if (value instanceof Map) {
+            Map<?, ?> map = (Map<?, ?>) value;
+            return "true".equals(map.get("_null"));
+        }
+
+        return false;
     }
 
     /**
@@ -132,7 +203,12 @@ public class BoundUtil {
             }
         }
 
-        // 3. 使用Jackson进行类型转换
+        // 3. 缓存命中空值标记，返回空实例
+        if (isNullMarker(value)) {
+            return (T) createEmptyInstance(clazz);
+        }
+
+        // 4. 使用Jackson进行类型转换
         try {
             return objectMapper.convertValue(value, clazz);
         } catch (Exception e) {
@@ -459,7 +535,12 @@ public class BoundUtil {
     }
 
     public Boolean del(String key) {
-        return redisTemplate.delete(key);
+        try {
+            return redisTemplate.delete(key);
+        } catch (Exception e) {
+            log.error("删除key失败, key: {}", key, e);
+            return false;
+        }
     }
 
     public Long delMulti(String... keys) {
@@ -475,6 +556,7 @@ public class BoundUtil {
     public String getString(String key) {
         return get(key, String.class);
     }
+
     // Integer 类型的便捷方法
     public void setInt(String key, Integer value) {
         set(key, value);
@@ -483,6 +565,7 @@ public class BoundUtil {
     public Integer getInt(String key) {
         return get(key, Integer.class);
     }
+
     // Long 类型的便捷方法
     public void setLong(String key, Long value) {
         set(key, value);
@@ -491,6 +574,7 @@ public class BoundUtil {
     public Long getLong(String key) {
         return get(key, Long.class);
     }
+
     // Double 类型的便捷方法
     public void setDouble(String key, Double value) {
         set(key, value);

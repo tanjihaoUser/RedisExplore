@@ -7,13 +7,12 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 @Mapper
 public interface UserDetailMapper {
 
-    @RedisCache(name = "userDetail", prefix = "user", key = "#userId", expire = 300,
-            cacheType = CacheType.STRING, returnType = UserDetail.class)
+    @RedisCache(prefix = "user:detail", key = "#userId", expire = 300,
+            cacheType = CacheType.HASH, returnType = UserDetail.class)
     UserDetail selectByUserId(@Param("userId") Long userId);
 
     int insert(UserDetail userDetail);

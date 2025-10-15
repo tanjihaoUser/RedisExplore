@@ -77,6 +77,20 @@
             <version>2.15.2</version> <!-- 版本与您的Jackson版本保持一致 -->
         </dependency>
 
+        <!-- Google Guava (包含单机版布隆过滤器) -->
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>31.1-jre</version>
+        </dependency>
+
+        <!-- Jedis (Redis Java Client，用于连接RedisBloom) -->
+        <dependency>
+            <groupId>redis.clients</groupId>
+            <artifactId>jedis</artifactId>
+            <version>4.3.1</version>
+        </dependency>
+
         <!-- SpringBoot测试依赖 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

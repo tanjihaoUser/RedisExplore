@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit;
 public @interface RedisCache {
 
     /** 监控名称 */
-    String name();
+    String name() default "";
 
     /** 缓存前缀 */
     String prefix() default "";

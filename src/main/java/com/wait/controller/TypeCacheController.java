@@ -1,5 +1,6 @@
 package com.wait.controller;
 
+import com.wait.entity.domain.UserBase;
 import com.wait.entity.domain.UserDetail;
 import com.wait.service.TypeCacheServiceImpl;
 import lombok.extern.slf4j.Slf4j;
@@ -17,14 +18,26 @@ public class TypeCacheController {
     @Autowired
     private TypeCacheServiceImpl typeCacheService;
 
-    @GetMapping("/classToString")
-    public UserDetail classToString(@RequestParam("userId") String userId) {
+    @GetMapping("/string")
+    public UserBase classToString(@RequestParam("userId") String userId) {
         try {
             long parseUserId = Long.parseLong(userId);
-            return typeCacheService.getUserName(parseUserId);
+            return typeCacheService.getBaseWithString(parseUserId);
         } catch (Exception e) {
             log.warn("userId: {} is not a number", userId);
             return null;
         }
     }
+
+    @GetMapping("/hash")
+    public UserDetail classToHash(@RequestParam("userId") String userId) {
+        try {
+            long parseUserId = Long.parseLong(userId);
+            return typeCacheService.getDetailWithHash(parseUserId);
+        } catch (Exception e) {
+            log.warn("userId: {} is not a number", userId);
+            return null;
+        }
+    }
+
 }

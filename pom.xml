@@ -1,13 +1,13 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-    <parent>
-        <groupId>com.wait</groupId>
-        <artifactId>Explore</artifactId>
-        <version>1.0-SNAPSHOT</version>
-    </parent>
 
+    <groupId>com.wait</groupId>
     <artifactId>RedisExplore</artifactId>
+    <version>1.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <name>RedisExplore</name>
@@ -15,7 +15,33 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.source>8</maven.compiler.source>
+        <maven.compiler.target>8</maven.compiler.target>
+
+        <!-- 显式定义所有版本号 -->
+        <spring-boot.version>2.7.12</spring-boot.version>
+        <commons-pool2.version>2.11.1</commons-pool2.version>
+        <mybatis-spring-boot.version>2.3.0</mybatis-spring-boot.version>
+        <mysql-connector.version>8.0.33</mysql-connector.version>
+        <druid.version>1.2.25</druid.version>
+        <jackson.version>2.15.2</jackson.version>
+        <guava.version>31.1-jre</guava.version>
+        <jedis.version>4.3.1</jedis.version>
+        <lombok.version>1.18.28</lombok.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Spring Boot BOM 用于管理Spring相关依赖版本 -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <dependency>
@@ -25,7 +51,7 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- Spring Boot Starter AOP -->
+        <!-- Spring Boot Starters -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-aop</artifactId>
@@ -46,61 +72,98 @@
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-pool2</artifactId>
+            <version>${commons-pool2.version}</version>
         </dependency>
 
-        <!-- MyBatis Spring Boot Starter -->
+        <!-- MyBatis -->
         <dependency>
             <groupId>org.mybatis.spring.boot</groupId>
             <artifactId>mybatis-spring-boot-starter</artifactId>
-            <version>2.3.0</version>
+            <version>${mybatis-spring-boot.version}</version>
         </dependency>
 
         <!-- MySQL驱动 -->
         <dependency>
             <groupId>mysql</groupId>
             <artifactId>mysql-connector-java</artifactId>
-            <version>8.0.33</version>
+            <version>${mysql-connector.version}</version>
             <scope>runtime</scope>
         </dependency>
 
-        <!-- 连接池 (推荐使用Druid) -->
+        <!-- Druid连接池 -->
         <dependency>
             <groupId>com.alibaba</groupId>
             <artifactId>druid-spring-boot-starter</artifactId>
-            <version>1.2.25</version>
+            <version>${druid.version}</version>
         </dependency>
 
-       <!-- 解决 localdatetime 类型的Jackson 序列化问题 -->
+        <!-- 解决 localdatetime 类型的 Jackson 序列化问题 -->
         <dependency>
             <groupId>com.fasterxml.jackson.datatype</groupId>
             <artifactId>jackson-datatype-jsr310</artifactId>
-            <version>2.15.2</version> <!-- 版本与您的Jackson版本保持一致 -->
+            <version>${jackson.version}</version>
         </dependency>
 
-        <!-- Google Guava (包含单机版布隆过滤器) -->
+        <!-- Google Guava (包含单机版布隆过滤器和本地缓存) -->
         <dependency>
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
-            <version>31.1-jre</version>
+            <version>${guava.version}</version>
         </dependency>
 
         <!-- Jedis (Redis Java Client，用于连接RedisBloom) -->
         <dependency>
             <groupId>redis.clients</groupId>
             <artifactId>jedis</artifactId>
-            <version>4.3.1</version>
+            <version>${jedis.version}</version>
         </dependency>
 
-        <!-- SpringBoot测试依赖 -->
+        <!-- Spring Boot测试 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>   <!-- 仅测试可见 -->
         </dependency>
+
+        <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
+            <version>${lombok.version}</version>
             <scope>provided</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Spring Boot Maven Plugin -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring-boot.version}</version>
+                <configuration>
+                    <mainClass>com.wait.RedisExplore.Application</mainClass>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- 编译器插件 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+                <configuration>
+                    <source>8</source>
+                    <target>8</target>
+                    <encoding>UTF-8</encoding>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>

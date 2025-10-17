@@ -12,6 +12,7 @@ import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.TimeUnit;
@@ -31,6 +32,7 @@ public class RedisCacheAspect {
     private Lock lock;
 
     @Autowired
+    @Qualifier("guavaBloomFilter")
     private IBloomFilter bloomFilter;
 
     @Around("@annotation(redisCache)")

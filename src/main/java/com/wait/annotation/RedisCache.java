@@ -1,6 +1,9 @@
 package com.wait.annotation;
 
-import com.wait.entity.CacheType;
+import com.wait.entity.type.DataOperationType;
+import com.wait.entity.type.CacheType;
+import com.wait.entity.type.ReadStrategyType;
+import com.wait.entity.type.WriteStrategyType;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -41,4 +44,14 @@ public @interface RedisCache {
 
     /** 排除条件（SpEL），当条件满足时不缓存（与condition相反）*/
     String unless() default "";
+
+    /** 操作类型 */
+    DataOperationType operation() default DataOperationType.SELECT;
+
+    /** 读策略（用于SELECT操作） */
+    ReadStrategyType readStrategy() default ReadStrategyType.LAZY_LOAD;
+
+    /** 写策略（用于UPDATE/DELETE操作） */
+    WriteStrategyType writeStrategy() default WriteStrategyType.CACHE_ASIDE;
+
 }

@@ -1,4 +1,4 @@
-package com.wait.entity;
+package com.wait.entity.type;
 
 /**
  * 限流器类型枚举

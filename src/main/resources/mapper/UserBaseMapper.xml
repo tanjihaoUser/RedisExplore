@@ -49,6 +49,14 @@
     </update>
 
     <!-- 更新用户状态 -->
+    <update id="updateById">
+        UPDATE user_base
+        SET username = #{username}, email = #{email}, phone = #{phone}, status = #{status}, user_type = #{user_type},
+        status = #{status}, update_time = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <!-- 更新用户状态 -->
     <update id="updateStatus">
         UPDATE user_base
         SET status = #{status}, update_time = NOW()

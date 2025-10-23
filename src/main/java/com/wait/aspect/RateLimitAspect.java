@@ -1,7 +1,7 @@
 package com.wait.aspect;
 
 import com.wait.annotation.RateLimit;
-import com.wait.entity.LimitType;
+import com.wait.entity.type.LimitType;
 import com.wait.util.SpelExpressionParserUtil;
 import com.wait.util.limit.RateLimiter;
 import com.wait.util.limit.SlideWindow;

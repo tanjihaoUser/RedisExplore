@@ -118,6 +118,12 @@
             <version>${jedis.version}</version>
         </dependency>
 
+        <!-- Spring Retry -->
+        <dependency>
+            <groupId>org.springframework.retry</groupId>
+            <artifactId>spring-retry</artifactId>
+        </dependency>
+
         <!-- Spring Boot测试 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

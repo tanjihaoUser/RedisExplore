@@ -1,6 +1,6 @@
 package com.wait.annotation;
 
-import com.wait.entity.LimitType;
+import com.wait.entity.type.LimitType;
 
 import java.lang.annotation.*;
 import java.util.concurrent.TimeUnit;

@@ -1,7 +1,8 @@
 package com.wait.util;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.wait.entity.CacheType;
+import com.wait.entity.CacheSyncParam;
+import com.wait.entity.type.CacheType;
 import com.wait.util.instance.HashMappingUtil;
 import com.wait.util.instance.InstanceFactory;
 import lombok.extern.slf4j.Slf4j;
@@ -56,8 +57,9 @@ public class BoundUtil {
     /**
      * 从缓存获取数据
      */
-    public Object getFromCache(String key, CacheType cacheType, Class<?> clazz) {
-        Object result = null;
+    @SuppressWarnings("unchecked")
+    public <T> T getFromCache(String key, CacheType cacheType, Class<T> clazz) {
+        T result = null;
         try {
             switch (cacheType) {
                 case STRING:
@@ -109,6 +111,15 @@ public class BoundUtil {
         } catch (Exception e) {
             log.warn("缓存设置异常, key: {}", key, e);
         }
+    }
+
+
+    public <T> T getFromCache(CacheSyncParam<T> param) {
+        return getFromCache(param.getKey(), param.getCacheType(), param.getClazz());
+    }
+    
+    public void cacheResult(CacheSyncParam param) {
+        cacheResult(param.getKey(), param.getNewValue(), param.getCacheType(), param.getExpireTime(), param.getTimeUnit(), param.getCacheNull());
     }
 
     /**
@@ -583,4 +594,5 @@ public class BoundUtil {
     public Double getDouble(String key) {
         return get(key, Double.class);
     }
+
 }

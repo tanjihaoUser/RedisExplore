@@ -21,6 +21,8 @@ public interface UserBaseMapper {
 
     int updateStatus(@Param("userId") Long userId, @Param("status") Integer status);
 
+    void updateById(UserBase userBase);
+
     Long countUsers();
 
     // 批量查询

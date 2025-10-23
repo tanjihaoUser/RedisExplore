@@ -1,7 +1,7 @@
 package com.wait.mapper;
 
 import com.wait.annotation.RedisCache;
-import com.wait.entity.CacheType;
+import com.wait.entity.type.CacheType;
 import com.wait.entity.domain.UserDetail;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;

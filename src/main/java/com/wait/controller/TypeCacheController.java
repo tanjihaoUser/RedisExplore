@@ -10,6 +10,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * 测试Redis基础类型的缓存与转换
+ * */
 @RestController
 @RequestMapping("/typeCache")
 @Slf4j

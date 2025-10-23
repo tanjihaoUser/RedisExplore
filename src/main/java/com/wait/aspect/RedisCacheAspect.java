@@ -1,7 +1,7 @@
 package com.wait.aspect;
 
 import com.wait.annotation.RedisCache;
-import com.wait.entity.CacheType;
+import com.wait.entity.type.CacheType;
 import com.wait.util.BoundUtil;
 import com.wait.util.SpelExpressionParserUtil;
 import com.wait.util.bloomfilter.IBloomFilter;

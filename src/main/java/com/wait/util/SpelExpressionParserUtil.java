@@ -32,7 +32,6 @@ public class SpelExpressionParserUtil {
      * 解析SpEL表达式
      */
     public Object parseSpel(ProceedingJoinPoint joinPoint, String expression) {
-        log.info("before parse, exp: {}", expression);
         if (expression == null || expression.trim().isEmpty()) {
             return "";
         }
@@ -57,7 +56,6 @@ public class SpelExpressionParserUtil {
 
             // 解析表达式
             Expression expr = parser.parseExpression(expression);
-            log.info("after parse, exp: {}", expr.getValue(context));
             return expr.getValue(context);
 
         } catch (Exception e) {
@@ -148,7 +146,6 @@ public class SpelExpressionParserUtil {
         }
 
         Object keyValue = parseSpel(joinPoint, keyExpression);
-        log.info("parsed key: {}", keyValue);
         if (!StringUtil.isNullOrEmpty(prefix)) {
             return prefix + ":" + (keyValue != null ? keyValue.toString() : "null");
         }

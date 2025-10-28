@@ -45,7 +45,7 @@ public @interface RedisCache {
     /** 排除条件（SpEL），当条件满足时不缓存（与condition相反）*/
     String unless() default "";
 
-    /** 操作类型 */
+    /** 操作类型，用于判断是执行读策略还是写策略 */
     DataOperationType operation() default DataOperationType.SELECT;
 
     /** 读策略（用于SELECT操作） */

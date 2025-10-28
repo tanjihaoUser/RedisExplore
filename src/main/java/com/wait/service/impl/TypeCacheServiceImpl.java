@@ -1,4 +1,4 @@
-package com.wait.service;
+package com.wait.service.impl;
 
 import com.wait.entity.domain.UserBase;
 import com.wait.entity.domain.UserDetail;

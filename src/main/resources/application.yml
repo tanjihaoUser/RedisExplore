@@ -1,5 +1,19 @@
 # application.yml
 spring:
+  redis:
+    host: 127.0.0.1
+    port: 6379
+    timeout: 2000ms          # 命令执行超时，防止阻塞
+    connect-timeout: 2000ms  # 连接超时，防止阻塞
+
+    # --- 连接池的核心配置，复用连接，提高效率 (使用Lettuce) ---
+    lettuce:
+      pool:
+        max-active: 10      # 最大连接数（-1表示不限制）
+        max-idle: 8         # 最大空闲连接数
+        min-idle: 2         # 最小空闲连接数
+        max-wait: 3000ms    # 当连接池耗尽时，获取连接的最大等待时间（-1表示无限等待）
+
   datasource:
     # 数据库配置
     url: jdbc:mysql://localhost:3306/redis_use?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8
@@ -56,4 +70,6 @@ mybatis:
 # 日志配置
 logging:
   level:
-    com.wait.mapper: info  # 打印SQL日志
+    root: warn              # 忽略框架中打印无关日志
+    com.wait.*.*: debug     # 本项目级别所有日志开关
+    com.wait.mapper: info   # 打印SQL日志

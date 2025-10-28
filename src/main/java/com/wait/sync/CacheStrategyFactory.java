@@ -18,6 +18,7 @@ public class CacheStrategyFactory {
     private final Map<ReadStrategyType, ReadStrategy> readStrategies;
     private final Map<WriteStrategyType, WriteStrategy> writeStrategies;
 
+    // Spring 使用 @Autowired 注入 List<ReadStrategy> 和 List<WriteStrategy> 时，会自动将容器中所有该接口的实现类收集到一个 List 中。
     @Autowired
     public CacheStrategyFactory(List<ReadStrategy> readStrategyList,
                                 List<WriteStrategy> writeStrategyList) {
@@ -61,7 +62,7 @@ public class CacheStrategyFactory {
         if (cacheName.startsWith("user:") || cacheName.startsWith("order:")) {
             return getWriteStrategy(WriteStrategyType.CACHE_ASIDE);
         } else if (cacheName.startsWith("log:") || cacheName.startsWith("stat:")) {
-            return getWriteStrategy(WriteStrategyType.WRITE_BEHIND);
+            return getWriteStrategy(WriteStrategyType.WRITE_BEHIND_MQ);
         } else {
             return getWriteStrategy(WriteStrategyType.WRITE_THROUGH);
         }

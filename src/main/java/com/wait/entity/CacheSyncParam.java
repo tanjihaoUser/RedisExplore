@@ -1,5 +1,6 @@
 package com.wait.entity;
 
+import com.wait.annotation.RedisCache;
 import com.wait.entity.type.CacheType;
 import lombok.Builder;
 import lombok.Data;
@@ -26,5 +27,18 @@ public class CacheSyncParam<T> {
     private String messageTopic;
     private Integer refreshInterval; // 刷新间隔（用于定时刷新策略）
     private T result;
+
+    public static CacheSyncParam getFromRedisCache(String key, RedisCache cache) {
+        return CacheSyncParam.builder()
+                .key(key)
+                .newValue(null)
+                .expireTime(cache.expire())
+                .timeUnit(cache.timeUnit())
+                .cacheNull(cache.isCacheNull())
+                .cacheType(cache.cacheType())
+                .clazz((Class<Object>) cache.returnType())
+                .refreshInterval(10000)
+                .build();
+    }
 
 }

@@ -2,7 +2,7 @@ package com.wait.controller;
 
 import com.wait.annotation.RateLimit;
 import com.wait.entity.type.LimitType;
-import com.wait.service.RateLimitServiceImpl;
+import com.wait.service.impl.RateLimitServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;

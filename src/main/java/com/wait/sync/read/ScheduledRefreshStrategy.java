@@ -1,5 +1,6 @@
 package com.wait.sync.read;
 
+import com.wait.entity.CacheResult;
 import com.wait.entity.CacheSyncParam;
 import com.wait.entity.type.ReadStrategyType;
 import com.wait.util.AsyncSQLWrapper;
@@ -7,13 +8,19 @@ import com.wait.util.BoundUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.stereotype.Component;
 
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 
+/**
+ * 定时刷新缓存，主动推送，数据始终在缓存中，读请求的命中率极高，性能很好。
+ * */
 @Component
 @Slf4j
 public class ScheduledRefreshStrategy implements ReadStrategy {
@@ -22,6 +29,7 @@ public class ScheduledRefreshStrategy implements ReadStrategy {
     private BoundUtil boundUtil;
 
     @Autowired
+    @Qualifier("refreshScheduler")
     private ThreadPoolTaskScheduler taskScheduler;
 
     @Autowired
@@ -32,9 +40,10 @@ public class ScheduledRefreshStrategy implements ReadStrategy {
     @Override
     public <T> T read(CacheSyncParam<T> param, ProceedingJoinPoint joinPoint) {
         // 先尝试读缓存
-        T value = (T) boundUtil.getFromCache(param);
-        if (value != null) {
-            return value;
+        CacheResult<T> value = boundUtil.getWithRetry(param, 3);
+        if (value.isHit()) {
+            log.debug("Scheduled Refresh hit cache, key: {}, value: {}", param.getKey(), value.getValue());
+            return value.getValue();
         }
 
         // 缓存不存在，同步加载并启动刷新
@@ -45,7 +54,7 @@ public class ScheduledRefreshStrategy implements ReadStrategy {
         try {
             // 同步加载数据
             asyncSQLWrapper.executeAspectMethod(param, joinPoint);
-            boundUtil.cacheResult(param);
+            boundUtil.writeWithRetry(param, 3);
 
             // 启动定时刷新任务
             scheduleRefreshTask(param, joinPoint);
@@ -71,22 +80,18 @@ public class ScheduledRefreshStrategy implements ReadStrategy {
         // 创建新的刷新任务
         ScheduledFuture<?> future = taskScheduler.scheduleAtFixedRate(() -> {
             try {
-                asyncSQLWrapper.executeSimple(key, false, () -> {
-                    try {
-                        return joinPoint.proceed();
-                    } catch (Throwable e) {
-                        log.info("定时刷新失败: {}", key, e);
-                        throw new RuntimeException(e);
-                    }
-                });
-                log.debug("定时刷新完成: {}", param);
+                asyncSQLWrapper.executeAspectMethod(param, joinPoint);
+                boundUtil.writeWithRetry(param, 3);
+                SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
+                String currentTime = sdf.format(new Date());
+                log.debug("refresh success, key: {}, value: {}, time: {}", param.getKey(), param.getResult(), currentTime);
             } catch (Exception e) {
-                log.error("定时刷新失败: {}", param);
+                log.error("schedule refresh fail: {}", param);
             }
         }, param.getRefreshInterval());
 
         refreshTasks.put(key, future);
-        log.info("启动定时刷新任务: {}, 间隔: {}ms", key, param.getRefreshInterval());
+        log.info("begin schedule refresh, key: {}, interval: {}ms", key, param.getRefreshInterval());
     }
 
     private void cancelRefreshTask(String key) {

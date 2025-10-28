@@ -9,6 +9,9 @@ import org.aspectj.lang.ProceedingJoinPoint;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+/**
+ * case aside同步模式，适用于大多数读多写少的场景
+ * */
 @Component
 @Slf4j
 public class CacheAsideStrategy implements WriteStrategy {
@@ -28,11 +31,11 @@ public class CacheAsideStrategy implements WriteStrategy {
             // 2. 删除缓存（Cache-Aside模式）
             boundUtil.del(param.getKey());
 
-            log.debug("Cache-Aside写策略执行完成: {}", param.getKey());
+            log.debug("Cache-Aside write strategy executed, key: {}", param.getKey());
 
         } catch (Exception e) {
-            log.error("Cache-Aside写策略失败: {}", param, e);
-            throw new RuntimeException("写操作失败", e);
+            log.error("Cache-Aside write strategy executed with error, key: {}", param, e);
+            throw new RuntimeException("write failed", e);
         }
     }
 
@@ -45,10 +48,10 @@ public class CacheAsideStrategy implements WriteStrategy {
             // 2. 删除缓存
             boundUtil.del(param.getKey());
 
-            log.debug("Cache-Aside删除策略执行完成: {}", param.getKey());
+            log.debug("Cache-Aside delete strategy executed: {}", param.getKey());
         } catch (Exception e) {
-            log.error("Cache-Aside删除策略失败: {}", param, e);
-            throw new RuntimeException("删除操作失败", e);
+            log.error("Cache-Aside delete strategy executed with error: {}", param, e);
+            throw new RuntimeException("delete failed", e);
         }
     }
 

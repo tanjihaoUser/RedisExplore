@@ -1,12 +1,20 @@
 package com.wait.util;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wait.entity.CacheResult;
 import com.wait.entity.CacheSyncParam;
+import com.wait.entity.NullObject;
 import com.wait.entity.type.CacheType;
+import com.wait.exception.CacheOperationException;
 import com.wait.util.instance.HashMappingUtil;
 import com.wait.util.instance.InstanceFactory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.InvalidDataAccessApiUsageException;
+import org.springframework.dao.QueryTimeoutException;
+import org.springframework.data.redis.RedisSystemException;
 import org.springframework.data.redis.core.BoundHashOperations;
 import org.springframework.data.redis.core.BoundListOperations;
 import org.springframework.data.redis.core.BoundSetOperations;
@@ -14,8 +22,10 @@ import org.springframework.data.redis.core.BoundValueOperations;
 import org.springframework.data.redis.core.BoundZSetOperations;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
 
+import java.net.SocketTimeoutException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -25,7 +35,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 /**
  * 支持任意类型的 Redis 工具类
@@ -50,38 +62,181 @@ public class BoundUtil {
     @Autowired
     private InstanceFactory instanceFactory;
 
+    @Autowired
+    @Qualifier("retryExecutor")
+    private ThreadPoolTaskExecutor retryExecutor;
+
     public static final int NULL_CACHE_TIME = 30; // 空值缓存时间
     public static final TimeUnit NULL_CACHE_TIME_UNIT = TimeUnit.SECONDS; // 空值缓存时间
     private final Random random = new Random();
 
     /**
-     * 从缓存获取数据
+     * 同步带重试的读操作
+     * 特点：阻塞调用线程，直到成功或彻底失败。用于需要立即获取结果的场景。
+     * 示例：用户下单前查询商品信息。
      */
-    @SuppressWarnings("unchecked")
-    public <T> T getFromCache(String key, CacheType cacheType, Class<T> clazz) {
+    public <T> CacheResult<T> getWithRetry(CacheSyncParam<T> param, int maxRetries) {
+        return executeWithRetry(() -> getFromCache(param), maxRetries, param.getKey(), "read");
+    }
+
+    /**
+     * 同步带重试的写操作
+     * 特点：阻塞调用线程，确保缓存更新成功。用于数据库和缓存强一致的场景。
+     * 示例：扣减库存后，必须同步更新缓存。
+     */
+    public void writeWithRetry(CacheSyncParam param, int maxRetries) {
+        executeWithRetry(() -> {
+            cacheResult(param);
+            return null; // 适配Void方法
+        }, maxRetries, param.getKey(), "write");
+    }
+
+    /**
+     * 情况3：异步带重试的写操作（最大努力通知）
+     * 特点：不阻塞主流程，后台尽最大努力更新。用于可接受最终一致性的场景。
+     * 示例：更新用户个人头像后，缓存可以异步更新。
+     */
+    public CompletableFuture<Void> writeWithAsyncRetry(CacheSyncParam param, int maxRetries) {
+        return CompletableFuture.runAsync(() -> {
+            try {
+                writeWithRetry(param, maxRetries);
+            } catch (Exception e) {
+                log.error("Async cache update finally failed for key: {}. Manual compensation may be needed.", param.getKey(), e);
+                // 此处不向外抛出异常，因为这是"最大努力"。可以记录到补偿表供后续处理。
+            }
+        }, retryExecutor);
+    }
+
+    /**
+     * 核心重试逻辑（同步）
+     */
+    private <T> T executeWithRetry(Supplier<T> operation, int maxRetries, String key, String opType) {
+        int attempts = 0;
+        Exception lastException = null;
+
+        while (attempts <= maxRetries) {
+            try {
+                return operation.get(); // 执行实际操作
+            } catch (Exception e) {
+                lastException = e;
+                attempts++;
+
+                if (attempts < maxRetries && isRetryableException(e)) {
+                    // 可重试的异常，等待后继续
+                    log.warn("Redis {} op failed, will retry. Key: [{}], Attempt: {}/{}, Error: {}",
+                            opType, key, attempts, maxRetries, e.getMessage());
+                    doWaitBeforeRetry(attempts, key);
+                } else {
+                    // 不可重试或达到最大次数，彻底失败
+                    log.error("Redis {} op finally failed after {} attempts. Key: [{}]",
+                            opType, attempts, key, e);
+                    throw new CacheOperationException("Redis operation failed", e);
+                }
+            }
+        }
+        // 理论上不会执行到此处
+        throw new CacheOperationException("Unexpected retry logic error", lastException);
+    }
+
+    /**
+     * 异常分类 - 判断哪些异常值得重试
+     */
+    private boolean isRetryableException(Exception e) {
+        // 可重试异常：通常是暂时的、网络相关的、可自我恢复的
+        return e instanceof DataAccessResourceFailureException  // 连接断开（Spring异常）
+                || e instanceof RedisSystemException           // 系统级错误（Spring异常）
+                || e instanceof QueryTimeoutException          // 查询超时（Spring异常）
+                || e instanceof SocketTimeoutException         // Socket超时（Java标准异常）
+                || (e instanceof InvalidDataAccessApiUsageException &&
+                !isBusinessLogicError((InvalidDataAccessApiUsageException) e)); // 非业务逻辑的API使用错误
+    }
+
+    /**
+     * 关键点2：区分不可重试的业务逻辑错误
+     */
+    private boolean isBusinessLogicError(InvalidDataAccessApiUsageException e) {
+        String msg = e.getMessage().toLowerCase();
+        Throwable cause = e.getCause();
+        String causeMsg = cause != null ? cause.getMessage().toLowerCase() : "";
+
+        // 不可重试异常：通常是永久的、代码逻辑错误，重试无意义
+        return msg.contains("wrong number of arguments")    // 命令参数错误
+                || msg.contains("unknown command")          // 未知命令
+                || msg.contains("syntax error")             // 语法错误
+                || msg.contains("wrongtype")                // 类型操作错误（如对字符串执行HASH操作）
+                || causeMsg.contains("wrong number of arguments")
+                || causeMsg.contains("unknown command")
+                || causeMsg.contains("syntax error")
+                || causeMsg.contains("wrongtype");
+    }
+
+    /**
+     * 关键点3：重试等待策略（指数退避 + 随机抖动）
+     */
+    private void doWaitBeforeRetry(int attempt, String key) {
+        try {
+            long waitTime = calculateBackoffWithJitter(attempt);
+            log.debug("Waiting {} ms before retry. Key: [{}]", waitTime, key);
+            Thread.sleep(waitTime);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            throw new CacheOperationException("Retry interrupted", ie);
+        }
+    }
+
+    private long calculateBackoffWithJitter(int attempt) {
+        long baseDelayMs = 200L; // 基础延迟
+        long maxDelayMs = 5000L; // 最大延迟，避免等待过长
+
+        // 指数退避: base * 2^(attempt-1)
+        long exponentialDelay = baseDelayMs * (1L << (attempt - 1));
+        long delay = Math.min(exponentialDelay, maxDelayMs);
+
+        // 随机抖动: 添加0-1秒的随机值，避免多个客户端同时重试（惊群效应）
+        long jitter = (long) (Math.random() * 1000);
+        return delay + jitter;
+    }
+
+    /** 获取缓存 */
+    public <T> CacheResult<T> getFromCache(CacheSyncParam<T> param) {
+        String key = param.getKey();
+        Class<T> clazz = param.getClazz();
+        CacheType cacheType = param.getCacheType();
         T result = null;
         try {
             switch (cacheType) {
                 case STRING:
                     result = get(key, clazz);
+                    if (result == NullObject.NULL_STR_VALUE) {
+                        return CacheResult.nullCache();
+                    }
                     break;
                 case HASH:
                     result = hGetAll(key, clazz);
+                    if (result == NullObject.NULL_HASH_VALUE) {
+                        return CacheResult.nullCache();
+                    }
                     break;
                 default:
                     log.warn("不支持的缓存类型: {}", cacheType);
-                    return null;
+                    return CacheResult.trans(null);
             }
         } catch (Exception e) {
-            log.warn("缓存读取异常, key: {}", key, e);
+            log.info("getFromCache fail, error: {}", e.getMessage());
+            throw e;
         }
-        return result;
+        log.debug("getFromCache success, key: {}, result: {}", key, result);
+        return CacheResult.trans(result);
     }
 
-    /**
-     * 缓存结果
-     */
-    public void cacheResult(String key, Object result, CacheType cacheType, int baseExpire, TimeUnit timeUnit, boolean cacheNull) {
+    /** 缓存结果 */
+    public void cacheResult(CacheSyncParam param) {
+        String key = param.getKey();
+        CacheType cacheType = param.getCacheType();
+        Object result = param.getResult();
+        int baseExpire = param.getExpireTime();
+        TimeUnit timeUnit = param.getTimeUnit();
+        Boolean cacheNull = param.getCacheNull();
         try {
             if (result == null) {
                 if (cacheNull) {
@@ -103,23 +258,15 @@ public class BoundUtil {
                     hSetAll(key, hashMap, randomExpire, timeUnit);
                     break;
                 default:
-                    log.warn("不支持的缓存类型: {}", cacheType);
+                    log.warn("not support cacheType: {}", cacheType);
             }
 
-            log.debug("缓存设置成功, key: {}, expire: {}{}", key, randomExpire, timeUnit);
+            log.debug("cacheResult success, key: {}, expire: {}{}", key, randomExpire, timeUnit);
 
         } catch (Exception e) {
-            log.warn("缓存设置异常, key: {}", key, e);
+            log.info("cacheResult fail, error: {}", e.getMessage());
+            throw e;
         }
-    }
-
-
-    public <T> T getFromCache(CacheSyncParam<T> param) {
-        return getFromCache(param.getKey(), param.getCacheType(), param.getClazz());
-    }
-    
-    public void cacheResult(CacheSyncParam param) {
-        cacheResult(param.getKey(), param.getNewValue(), param.getCacheType(), param.getExpireTime(), param.getTimeUnit(), param.getCacheNull());
     }
 
     /**
@@ -139,10 +286,11 @@ public class BoundUtil {
                     break;
             }
 
-            log.info("空值缓存设置成功, key: {}", key);
+            log.debug("cacheNullValue success, key: {}", key);
 
         } catch (Exception e) {
-            log.warn("空值缓存设置异常, key: {}", key, e);
+            log.warn("cacheNullValue fail, key: {}", key, e);
+            throw e;
         }
     }
 
@@ -163,7 +311,7 @@ public class BoundUtil {
         try {
             return instanceFactory.createInstanceSafely(clazz);
         } catch (Exception e) {
-            log.warn("创建空实例失败: {}", clazz.getName(), e);
+            log.warn("createEmptyInstance fail, clazz: {}", clazz.getName(), e);
             return null;
         }
     }
@@ -275,7 +423,8 @@ public class BoundUtil {
                 redisTemplate.opsForValue().set(key, value, timeout, timeUnit);
             }
         } catch (Exception e) {
-            log.error("设置缓存失败, key: {}", key, e);
+            log.error("set value fail, key: {}", key, e);
+            throw e;
         }
     }
 
@@ -483,13 +632,9 @@ public class BoundUtil {
     }
 
     public <T> void hSetAll(String key, Map<String, T> hashMap, long timeout, TimeUnit timeUnit) {
-        try {
-            redisTemplate.opsForHash().putAll(key, hashMap);
-            if (timeout > 0) {
-                redisTemplate.expire(key, timeout, timeUnit);
-            }
-        } catch (Exception e) {
-            log.error("设置Hash缓存失败, key: {}", key, e);
+        redisTemplate.opsForHash().putAll(key, hashMap);
+        if (timeout > 0) {
+            redisTemplate.expire(key, timeout, timeUnit);
         }
     }
 
@@ -549,13 +694,17 @@ public class BoundUtil {
         try {
             return redisTemplate.delete(key);
         } catch (Exception e) {
-            log.error("删除key失败, key: {}", key, e);
+            log.error("del key failed, key: {}", key, e);
             return false;
         }
     }
 
     public Long delMulti(String... keys) {
         return redisTemplate.delete(Arrays.asList(keys));
+    }
+
+    public Set<String> keys(String pattern) {
+        return redisTemplate.keys(pattern);
     }
 
     /* ========== 便捷方法 ========== */

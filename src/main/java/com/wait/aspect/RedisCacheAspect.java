@@ -1,7 +1,11 @@
 package com.wait.aspect;
 
 import com.wait.annotation.RedisCache;
+import com.wait.entity.CacheSyncParam;
 import com.wait.entity.type.CacheType;
+import com.wait.sync.CacheStrategyFactory;
+import com.wait.sync.read.ReadStrategy;
+import com.wait.sync.write.WriteStrategy;
 import com.wait.util.BoundUtil;
 import com.wait.util.SpelExpressionParserUtil;
 import com.wait.util.bloomfilter.IBloomFilter;
@@ -35,61 +39,26 @@ public class RedisCacheAspect {
     @Qualifier("guavaBloomFilter")
     private IBloomFilter bloomFilter;
 
+    @Autowired
+    private CacheStrategyFactory cacheStrategyFactory;
+
     @Around("@annotation(redisCache)")
-    public Object getCache(ProceedingJoinPoint joinPoint, RedisCache redisCache) throws Throwable {
+    public Object handleCache(ProceedingJoinPoint joinPoint, RedisCache redisCache) throws Throwable {
         String key = spelExpressionParserUtil.generateCacheKey(joinPoint, redisCache.key(), redisCache.prefix());
-        CacheType cacheType = redisCache.cacheType();
-        Class<?> clazz = redisCache.returnType();
-        boolean cacheNull = redisCache.isCacheNull();
-        int baseExpire = redisCache.expire();
-        TimeUnit timeUnit = redisCache.timeUnit();
+        log.debug("aspect handle cache, key: {}, redisCache: {}", key, redisCache);
+        CacheSyncParam<Object> cacheSyncParam = CacheSyncParam.getFromRedisCache(key, redisCache);
 
-        try {
-            // 1. 先尝试从缓存获取
-            Object cachedValue = boundUtil.getFromCache(key, cacheType, clazz);
-            if (cachedValue != null) {
-                log.info("hit cache, key: {}, value: {}", key, cachedValue);
-                return cachedValue;
-            }
-
-
-            try {
-                // 2. 缓存未命中，尝试获取分布式锁
-                if (lock.getLock(key)) {
-                    log.info("get lock success and query db, key: {}", key);
-
-                    // 3. 再次检查缓存（双重检查锁模式）
-                    Object doubleCheckValue = boundUtil.getFromCache(key, cacheType, clazz);
-                    if (doubleCheckValue != null) {
-                        return doubleCheckValue;
-                    }
-
-                    // 4. 执行原方法（数据库查询）
-                    Object result = joinPoint.proceed();
-                    log.info("get data from databse, result: {}", result);
-
-                    // 5. 缓存结果
-                    boundUtil.cacheResult(key, result, cacheType, baseExpire, timeUnit, cacheNull);
-
-                    return result;
-
-                } else {
-                    // 获取锁失败，等待并重试
-                    log.debug("获取锁失败，等待后重试, key: {}", key);
-                    Thread.sleep(100);
-                    return getCache(joinPoint, redisCache);
-                }
-
-            } finally {
-                lock.releaseLock(key);
-            }
-
-        } catch (RedisConnectionException e) {
-            log.error("Redis连接异常, key: {}, 直接查询数据库", key, e);
-            return joinPoint.proceed();
-        } catch (Exception e) {
-            log.error("未知缓存处理异常, key: {}", key, e);
-            throw e; // 重新抛出，避免掩盖业务异常
+        switch (redisCache.operation()) {
+            case SELECT:
+                ReadStrategy strategy = cacheStrategyFactory.getReadStrategy(redisCache.readStrategy());
+                return strategy.read(cacheSyncParam, joinPoint);
+            case UPDATE:
+            case DELETE:
+                WriteStrategy writeStrategy = cacheStrategyFactory.getWriteStrategy(redisCache.writeStrategy());
+                writeStrategy.write(cacheSyncParam, joinPoint);
+                return null;
+            default:
+                return null;
         }
     }
 

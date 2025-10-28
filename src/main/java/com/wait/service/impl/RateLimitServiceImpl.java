@@ -1,4 +1,4 @@
-package com.wait.service;
+package com.wait.service.impl;
 
 import com.wait.util.BoundUtil;
 import com.wait.util.limit.RateLimiter;

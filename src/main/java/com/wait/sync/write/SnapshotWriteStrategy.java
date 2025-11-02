@@ -33,11 +33,15 @@ public class SnapshotWriteStrategy implements WriteStrategy {
     @Autowired
     private HashMappingUtil hashMappingUtil;
 
+    /** 定时刷库延迟时间：60秒 */
+    private static final long FLUSH_DELAY_MS = TimeUnit.SECONDS.toMillis(60);
+    
+    /** 重试延迟时间：60秒 */
+    private static final long RETRY_DELAY_MS = TimeUnit.SECONDS.toMillis(60);
+
     // 存储每个key对应的最新实体状态和joinPoint
     private final Map<String, SnapshotTask> snapshotBuffer = new ConcurrentHashMap<>();
     private final Map<String, ScheduledFuture<?>> flushTasks = new ConcurrentHashMap<>();
-    private static final long FLUSH_INTERVAL = 5; // 5秒
-    private static final long RETRY_INTERVAL = 5; // 5秒
 
     @Override
     public void write(CacheSyncParam param, ProceedingJoinPoint joinPoint) {
@@ -53,7 +57,7 @@ public class SnapshotWriteStrategy implements WriteStrategy {
             // 3. 缓冲实体快照
             bufferSnapshotTask(key, updatedEntity, joinPoint);
 
-            // 4. 启动定时刷库任务
+            // 4. 启动定时刷库任务（统一由定时任务执行数据库写入）
             scheduleFlushTask(key);
 
             log.debug("SnapshotWrite: Buffered snapshot, key: {}", key);
@@ -127,8 +131,16 @@ public class SnapshotWriteStrategy implements WriteStrategy {
 
             log.info("SnapshotWrite: Flushed to database, key: {}", key);
 
+            // 刷新成功后，如果还有新的数据等待刷新，继续创建定时任务
+            SnapshotTask remainingTask = snapshotBuffer.get(key);
+            if (remainingTask != null) {
+                log.debug("More data pending after flush, reschedule task, key: {}", key);
+                scheduleFlushTask(key);
+            }
+
         } catch (Throwable e) {
             log.error("SnapshotWrite: Flush failed, key: {}", key, e);
+            // 重试：将任务放回缓冲区，并重新创建任务
             snapshotBuffer.put(key, task);
             scheduleRetryTask(key);
         }
@@ -169,37 +181,46 @@ public class SnapshotWriteStrategy implements WriteStrategy {
         }
     }
 
+    /**
+     * 定时刷库任务
+     * 只在任务不存在时创建，避免每次更新都重置定时器
+     */
     private void scheduleFlushTask(String key) {
-        cancelFlushTask(key);
+        // 如果任务已存在且未完成，不重置定时器，保持固定刷新周期
+        ScheduledFuture<?> existingTask = flushTasks.get(key);
+        if (existingTask != null && !existingTask.isDone() && !existingTask.isCancelled()) {
+            log.debug("Flush task already scheduled, skip rescheduling, key: {}", key);
+            return;
+        }
+
+        // 任务不存在或已取消/完成，创建新任务
         ScheduledFuture<?> future = taskScheduler.schedule(
                 () -> flushToDatabase(key),
-                new Date(System.currentTimeMillis() + getFlushDelay())
+                new Date(System.currentTimeMillis() + FLUSH_DELAY_MS)
         );
+
         flushTasks.put(key, future);
+        log.debug("Scheduled task created, key: {}, delay: {}ms", key, FLUSH_DELAY_MS);
     }
 
     private void scheduleRetryTask(String key) {
+        // 重试任务取消旧任务后创建
+        cancelFlushTask(key);
         ScheduledFuture<?> future = taskScheduler.schedule(
                 () -> flushToDatabase(key),
-                new Date(System.currentTimeMillis() + getRetryDelay())
+                new Date(System.currentTimeMillis() + RETRY_DELAY_MS)
         );
         flushTasks.put(key, future);
+        log.debug("Scheduled retry task, key: {}, delay: {}ms", key, RETRY_DELAY_MS);
     }
 
     private void cancelFlushTask(String key) {
         ScheduledFuture<?> task = flushTasks.get(key);
         if (task != null) {
             task.cancel(false);
+            log.debug("cancel old task, key: {}", key);
             flushTasks.remove(key);
         }
-    }
-
-    private long getFlushDelay() {
-        return TimeUnit.SECONDS.toMillis(FLUSH_INTERVAL);
-    }
-
-    private long getRetryDelay() {
-        return TimeUnit.SECONDS.toMillis(RETRY_INTERVAL);
     }
 
     @Override

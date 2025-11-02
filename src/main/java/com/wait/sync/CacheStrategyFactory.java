@@ -12,6 +12,9 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+/**
+ * 读写策略工厂，获取各种读写策略
+ */
 @Component
 public class CacheStrategyFactory {
 

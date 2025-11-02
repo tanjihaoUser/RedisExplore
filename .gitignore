@@ -12,6 +12,7 @@
 /.gitignore
 .svn/
 .idea/
+.vscode/
 *.iml
 *.gitignore
 

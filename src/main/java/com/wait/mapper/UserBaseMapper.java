@@ -6,7 +6,6 @@ import com.wait.entity.type.DataOperationType;
 import com.wait.entity.type.ReadStrategyType;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
-import org.springframework.cache.interceptor.CacheOperation;
 
 import java.util.List;
 

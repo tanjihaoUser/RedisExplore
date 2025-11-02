@@ -2,12 +2,13 @@ package com.wait.util;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.wait.entity.CacheSyncParam;
-import com.wait.service.MQServiceImpl;
+import com.wait.service.MQService;
 import com.wait.util.message.CompensationMsg;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DataAccessException;
 import org.springframework.retry.RetryContext;
 import org.springframework.retry.annotation.Backoff;
@@ -29,7 +30,8 @@ public class AsyncSQLWrapper {
     private static final VoidOperationResult VOID_OPERATION_RESULT = new VoidOperationResult();
 
     @Autowired
-    private MQServiceImpl mqService;
+    @Qualifier("thirdMQService")
+    private MQService mqService;
 
     private final ExecutorService executor = new ThreadPoolExecutor(
             5, 20, 60L, TimeUnit.SECONDS,
@@ -41,7 +43,6 @@ public class AsyncSQLWrapper {
     /**
      * 执行切面方法 - 统一入口使用一个内部包装方法，统一将Runnable和void方法转换为Callable。
      */
-    @SuppressWarnings("unchecked")
     public <T> void executeAspectMethod(CacheSyncParam<T> param, ProceedingJoinPoint joinPoint) {
         // 1. 判断方法类型
         boolean isVoidMethod = isVoidMethod(joinPoint);
@@ -111,7 +112,7 @@ public class AsyncSQLWrapper {
                 T result = executeWithRetry(operation, param.getKey());
                 // 根据标志位决定是否设置结果
                 if (shouldSetResult) {
-                    param.setResult(result);
+                    param.setNewValue(result);
                     log.debug("Async operation completed, result set for key: {}", param.getKey());
                 } else {
                     log.debug("Async void operation completed for key: {}", param.getKey());
@@ -142,11 +143,11 @@ public class AsyncSQLWrapper {
             T result = executeWithRetry(operation, param.getKey());
             // 根据标志位决定是否设置结果
             if (shouldSetResult) {
-                param.setResult(result);
+                param.setNewValue(result);
                 log.debug("Sync operation completed, result set for key: {}", param.getKey());
             } else {
                 log.debug("Sync void operation completed for key: {}", param.getKey());
-                // param.setResult(null); // 可选
+                // param.setNewValue(null); // 可选
             }
         } catch (Exception e) {
             log.error("Sync operation failed: {}", param.getKey(), e);
@@ -187,7 +188,7 @@ public class AsyncSQLWrapper {
                     .failReason(error.getMessage())
                     .failTime(System.currentTimeMillis())
                     .build();
-            mqService.sendMessage(MQServiceImpl.COMPENSATION_TOPIC, param.getKey(), message);
+            mqService.sendDLMessage(param.getKey(), message);
         } catch (Exception mqError) {
             log.error("Failed to send to compensation queue: {}", param.getKey(), mqError);
         }

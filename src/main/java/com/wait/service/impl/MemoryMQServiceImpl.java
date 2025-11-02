@@ -1,5 +1,6 @@
 package com.wait.service.impl;
 
+import com.wait.entity.CacheSyncParam;
 import com.wait.service.MQService;
 import com.wait.util.message.AsyncDataMsg;
 import com.wait.util.message.CompensationMsg;
@@ -170,11 +171,11 @@ public class MemoryMQServiceImpl implements MQService {
             log.error("MemoryMQ: 消息处理失败, topic: {}, key: {}",
                     message.topic, message.key, e);
             // 处理失败的消息进入死信队列
-            CompensationMsg compensationMsg = new CompensationMsg(
-                    extractParamFromMessage(message),
-                    e.getMessage(),
-                    System.currentTimeMillis()
-            );
+            CompensationMsg<?> compensationMsg = CompensationMsg.builder()
+                    .originalParam(extractParamFromMessage(message))
+                    .failReason(e.getMessage())
+                    .failTime(System.currentTimeMillis())
+                    .build();
             sendDLMessage(message.key, compensationMsg);
         }
     }
@@ -206,8 +207,8 @@ public class MemoryMQServiceImpl implements MQService {
             log.error("MemoryMQ: 死信队列堆积严重, 当前大小: {}", dlqSize);
         }
 
-        log.debug("MemoryMQ状态 - 普通队列: {}/{}, 死信队列: {}/{}",
-                size, size + remaining, dlqSize, dlqQueue.remainingCapacity() + dlqSize);
+//        log.debug("MemoryMQ状态 - 普通队列: {}/{}, 死信队列: {}/{}",
+//                size, size + remaining, dlqSize, dlqQueue.remainingCapacity() + dlqSize);
     }
 
     /**
@@ -229,10 +230,15 @@ public class MemoryMQServiceImpl implements MQService {
         this.messageHandler = handler;
     }
 
-    private Object extractParamFromMessage(MQMessage message) {
+    private CacheSyncParam<Object> extractParamFromMessage(MQMessage message) {
         // 从消息中提取参数的逻辑
         if (message.message instanceof AsyncDataMsg) {
-            return ((AsyncDataMsg<?>) message.message).getData();
+            AsyncDataMsg<?> asyncDataMsg = (AsyncDataMsg<?>) message.message;
+            // 这里简化处理，实际应该根据entityType创建正确的CacheSyncParam
+            return CacheSyncParam.builder()
+                    .key(asyncDataMsg.getKey())
+                    .newValue(asyncDataMsg.getData())
+                    .build();
         }
         return null;
     }

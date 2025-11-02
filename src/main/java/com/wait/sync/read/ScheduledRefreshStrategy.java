@@ -59,7 +59,7 @@ public class ScheduledRefreshStrategy implements ReadStrategy {
             // 启动定时刷新任务
             scheduleRefreshTask(param, joinPoint);
 
-            return param.getResult();
+            return param.getNewValue();
 
         } catch (Exception e) {
             log.error("定时刷新策略初始化失败: {}", param, e);
@@ -84,7 +84,7 @@ public class ScheduledRefreshStrategy implements ReadStrategy {
                 boundUtil.writeWithRetry(param, 3);
                 SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
                 String currentTime = sdf.format(new Date());
-                log.debug("refresh success, key: {}, value: {}, time: {}", param.getKey(), param.getResult(), currentTime);
+                log.debug("refresh success, key: {}, value: {}, time: {}", param.getKey(), param.getNewValue(), currentTime);
             } catch (Exception e) {
                 log.error("schedule refresh fail: {}", param);
             }

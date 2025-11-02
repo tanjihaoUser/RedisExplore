@@ -14,8 +14,8 @@ import java.util.concurrent.TimeUnit;
 public class CacheSyncParam<T> {
 
     // 必填字段
-    String key;
-    T newValue;
+    private String key;
+    private T newValue;
     private Integer expireTime;
     private TimeUnit timeUnit;
     private Boolean cacheNull;
@@ -26,7 +26,6 @@ public class CacheSyncParam<T> {
     // 可选字段
     private String messageTopic;
     private Integer refreshInterval; // 刷新间隔（用于定时刷新策略）
-    private T result;
 
     public static CacheSyncParam getFromRedisCache(String key, RedisCache cache) {
         return CacheSyncParam.builder()

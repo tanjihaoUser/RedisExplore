@@ -43,7 +43,7 @@ public class TypeCacheController {
     }
 
     @GetMapping("/string")
-    public UserBase classToString(@RequestParam("userId") String userId) {
+    public UserBase objectToString(@RequestParam("userId") String userId) {
         try {
             long parseUserId = Long.parseLong(userId);
             return typeCacheService.getBaseWithString(parseUserId);
@@ -54,7 +54,7 @@ public class TypeCacheController {
     }
 
     @GetMapping("/hash")
-    public UserDetail classToHash(@RequestParam("userId") String userId) {
+    public UserDetail objectToHash(@RequestParam("userId") String userId) {
         try {
             long parseUserId = Long.parseLong(userId);
             return typeCacheService.getDetailWithHash(parseUserId);

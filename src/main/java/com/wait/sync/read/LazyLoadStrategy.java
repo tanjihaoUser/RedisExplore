@@ -2,7 +2,6 @@ package com.wait.sync.read;
 
 import com.wait.entity.CacheResult;
 import com.wait.entity.CacheSyncParam;
-import com.wait.entity.type.CacheStatus;
 import com.wait.entity.type.ReadStrategyType;
 import com.wait.util.AsyncSQLWrapper;
 import com.wait.util.BoundUtil;
@@ -58,15 +57,15 @@ public class LazyLoadStrategy implements ReadStrategy {
 
                 // 执行数据加载
                 asyncSQLWrapper.executeAspectMethod(param, joinPoint);
-                log.debug("database op execute success, res: {}", param.getResult());
+                log.debug("database op execute success, res: {}", param.getNewValue());
 
                 // 回填缓存
-                if (param.getResult() != null || Boolean.TRUE.equals(param.getCacheNull())) {
+                if (param.getNewValue() != null || Boolean.TRUE.equals(param.getCacheNull())) {
                     boundUtil.writeWithRetry(param, 3);
                     log.debug("lazy load write cache: {}", param.getKey());
                 }
 
-                return param.getResult();
+                return param.getNewValue();
 
             } finally {
                 lock.releaseLock(key);

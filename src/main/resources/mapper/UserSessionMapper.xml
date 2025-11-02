@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.wait.mapper.UserSessionMapper">
+
+    <!-- 定义全局的结果映射，避免字段重复编写 -->
+    <resultMap id="UserSessionResultMap" type="com.wait.entity.domain.UserSession">
+        <id column="session_id" property="sessionId"/>
+        <result column="user_id" property="userId"/>
+        <result column="username" property="username"/>
+        <result column="last_active_time" property="lastActiveTime"/>
+        <result column="visit_count" property="visitCount"/>
+        <result column="current_page" property="currentPage"/>
+        <result column="theme" property="theme"/>
+        <result column="language" property="language"/>
+        <result column="attributes" property="attributes" typeHandler="com.wait.handler.JsonTypeHandler"/>
+    </resultMap>
+
+    <!-- 插入一条新的Session记录（全量插入） -->
+    <insert id="insert" parameterType="com.wait.entity.domain.UserSession">
+        INSERT INTO user_session (
+        session_id, user_id, username, last_active_time,
+        visit_count, current_page, theme, language, attributes
+        ) VALUES (
+        #{sessionId}, #{userId}, #{username}, #{lastActiveTime},
+        #{visitCount}, #{currentPage}, #{theme}, #{language},
+        #{attributes, typeHandler=com.wait.handler.JsonTypeHandler}
+        )
+    </insert>
+
+    <!-- 全量更新Session信息（快照策略使用） -->
+    <update id="update" parameterType="com.wait.entity.domain.UserSession">
+        UPDATE user_session
+        SET
+        user_id = #{userId},
+        username = #{username},
+        last_active_time = #{lastActiveTime},
+        visit_count = #{visitCount},
+        current_page = #{currentPage},
+        theme = #{theme},
+        language = #{language},
+        attributes = #{attributes, typeHandler=com.wait.handler.JsonTypeHandler}
+        WHERE session_id = #{sessionId}
+    </update>
+
+    <!-- 根据主键查询完整的Session信息 -->
+    <select id="selectById" parameterType="String" resultMap="UserSessionResultMap">
+        SELECT
+        session_id, user_id, username, last_active_time,
+        visit_count, current_page, theme, language, attributes,
+        create_time, update_time
+        FROM user_session
+        WHERE session_id = #{sessionId}
+    </select>
+
+    <!-- 增量更新最后活跃时间和访问次数 -->
+    <update id="incrementVisitAndUpdateTime">
+        UPDATE user_session
+        SET
+        last_active_time = #{lastActiveTime},
+        visit_count = visit_count + #{visitCount}
+        WHERE session_id = #{sessionId}
+    </update>
+
+    <!-- 只更新最后活跃时间（高频字段） -->
+    <update id="updateLastActiveTime">
+        UPDATE user_session
+        SET last_active_time = #{lastActiveTime}
+        WHERE session_id = #{sessionId}
+    </update>
+
+    <!-- 只更新访问次数（增量累加） -->
+    <update id="incrementVisitCount">
+        UPDATE user_session
+        SET visit_count = visit_count + #{visitCount}
+        WHERE session_id = #{sessionId}
+    </update>
+
+    <!-- 更新当前页面（中频字段） -->
+    <update id="updateCurrentPage">
+        UPDATE user_session
+        SET current_page = #{currentPage}
+        WHERE session_id = #{sessionId}
+    </update>
+
+    <!-- 更新主题和语言（低频字段） -->
+    <update id="updatePreference">
+        UPDATE user_session
+        SET
+        theme = #{theme},
+        language = #{language}
+        WHERE session_id = #{sessionId}
+    </update>
+
+    <!-- 删除Session（登出时使用） -->
+    <delete id="deleteById" parameterType="String">
+        DELETE FROM user_session
+        WHERE session_id = #{sessionId}
+    </delete>
+
+    <!-- 清理过期Session（可由定时任务调用） -->
+    <delete id="deleteExpiredSessions">
+        DELETE FROM user_session
+        WHERE last_active_time &lt; #{timestamp}
+    </delete>
+
+</mapper>

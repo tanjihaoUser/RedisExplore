@@ -26,6 +26,12 @@ public class WriteThroughStrategy implements WriteStrategy {
     @Override
     public void write(CacheSyncParam param, ProceedingJoinPoint joinPoint) {
         try {
+            // 默认使用第一个方法参数作为缓存值
+            Object[] args = joinPoint.getArgs();
+            if (args != null && args.length > 0) {
+                param.setNewValue(args[0]);
+            }
+
             // 1. 先更新缓存
             boundUtil.writeWithRetry(param, 3);
 

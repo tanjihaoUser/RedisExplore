@@ -75,7 +75,6 @@ public class InstanceFactory {
     /**
      * 内部创建实例实现
      */
-    @SuppressWarnings("unchecked")
     private <T> T createInstanceInternal(Class<T> clazz) {
         // 1. 检查是否可实例化
         if (!isInstantiable(clazz)) {

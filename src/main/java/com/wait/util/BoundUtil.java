@@ -28,6 +28,7 @@ import org.springframework.stereotype.Component;
 import java.net.SocketTimeoutException;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -233,7 +234,7 @@ public class BoundUtil {
     public void cacheResult(CacheSyncParam param) {
         String key = param.getKey();
         CacheType cacheType = param.getCacheType();
-        Object result = param.getResult();
+        Object result = param.getNewValue();
         int baseExpire = param.getExpireTime();
         TimeUnit timeUnit = param.getTimeUnit();
         Boolean cacheNull = param.getCacheNull();
@@ -638,6 +639,36 @@ public class BoundUtil {
         }
     }
 
+    /**
+     * HMSET 便捷方法（与 hSetAll 等价，语义更贴近 Redis 命令）
+     */
+    public <K, V> void hmset(String key, Map<K, V> map) {
+        hSetAll(key, map);
+    }
+
+    /**
+     * HMGET 便捷方法：按字段集合批量获取值
+     */
+    public <K, V> List<V> hmget(String key, Collection<K> fields, Class<V> clazz) {
+        if (fields == null || fields.isEmpty()) {
+            return Collections.emptyList();
+        }
+        // 转换为符合 Spring Data Redis 签名的字段集合类型
+        List<Object> fieldList = new ArrayList<>(fields.size());
+        for (K f : fields) {
+            fieldList.add(f);
+        }
+        List<Object> values = redisTemplate.opsForHash().multiGet(key, fieldList);
+        if (values == null) {
+            return Collections.emptyList();
+        }
+        List<V> result = new ArrayList<>(values.size());
+        for (Object value : values) {
+            result.add(safeCast(value, clazz));
+        }
+        return result;
+    }
+
     public <K, V> V hGet(String key, K field, Class<V> clazz) {
         Object value = boundHash(key).get(field);
         if (value == null) {
@@ -662,6 +693,10 @@ public class BoundUtil {
 
         // 映射为对象
         return hashMappingUtil.mapToObject(stringKeyMap, clazz);
+    }
+
+    public <T> Long hIncrBy(String key, T value, long delta) {
+        return boundHash(key).increment(value, delta);
     }
 
     @SafeVarargs

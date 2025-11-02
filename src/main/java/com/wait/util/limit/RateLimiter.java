@@ -43,7 +43,6 @@ public abstract class RateLimiter {
         } else {
             log.info("visit limited, return null, key: {}", key);
         }
-        String s = boundUtil.get(key + LIMIT_STR, String.class);
         return value;
     }
 

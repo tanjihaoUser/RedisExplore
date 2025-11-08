@@ -6,9 +6,9 @@ import com.wait.entity.type.ReadStrategyType;
 import com.wait.util.AsyncSQLWrapper;
 import com.wait.util.BoundUtil;
 import com.wait.util.lock.Lock;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -16,16 +16,14 @@ import org.springframework.stereotype.Component;
  * */
 @Component
 @Slf4j
+@RequiredArgsConstructor
 public class LazyLoadStrategy implements ReadStrategy {
 
-    @Autowired
-    private BoundUtil boundUtil;
+    private final BoundUtil boundUtil;
 
-    @Autowired
-    private Lock lock;
-    
-    @Autowired
-    private AsyncSQLWrapper asyncSQLWrapper;
+    private final Lock lock;
+
+    private final AsyncSQLWrapper asyncSQLWrapper;
 
     @Override
     public <T> T read(CacheSyncParam<T> param, ProceedingJoinPoint joinPoint) {
@@ -74,6 +72,7 @@ public class LazyLoadStrategy implements ReadStrategy {
             try {
                 Thread.sleep(100);
             } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
                 log.warn("lazy load sleep interrupted error: {}", param.getKey(), e);
             }
             // 获取锁失败，重试

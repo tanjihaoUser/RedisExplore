@@ -29,17 +29,17 @@ public class TypeCacheController {
 
     @GetMapping("/testTimeout")
     public Set<String> testTimeout() {
-        long start = 0;
-        long end = 0;
-        Set<String> result = null;
+        long start = System.currentTimeMillis();
         try {
-            start = System.currentTimeMillis();
-            result = boundUtil.keys("*");
-            end = System.currentTimeMillis();
+            Set<String> result = boundUtil.keys("*");
+            long end = System.currentTimeMillis();
+            log.info("testTimeout completed in {} ms", end - start);
+            return result;
         } catch (Exception e) {
-            log.warn("testTimeout, start: {}, end: {}, error: {}", start, end, e.getMessage());
+            long end = System.currentTimeMillis();
+            log.error("testTimeout failed after {} ms", end - start, e);
+            throw e; // 让全局异常处理器处理
         }
-        return result;
     }
 
     @GetMapping("/string")
@@ -47,9 +47,9 @@ public class TypeCacheController {
         try {
             long parseUserId = Long.parseLong(userId);
             return typeCacheService.getBaseWithString(parseUserId);
-        } catch (Exception e) {
-            log.warn("userId: {} is not a number", userId);
-            return null;
+        } catch (NumberFormatException e) {
+            log.warn("Invalid userId format: {}", userId);
+            throw new IllegalArgumentException("userId must be a valid number: " + userId, e);
         }
     }
 
@@ -58,9 +58,9 @@ public class TypeCacheController {
         try {
             long parseUserId = Long.parseLong(userId);
             return typeCacheService.getDetailWithHash(parseUserId);
-        } catch (Exception e) {
-            log.warn("userId: {} is not a number", userId);
-            return null;
+        } catch (NumberFormatException e) {
+            log.warn("Invalid userId format: {}", userId);
+            throw new IllegalArgumentException("userId must be a valid number: " + userId, e);
         }
     }
 

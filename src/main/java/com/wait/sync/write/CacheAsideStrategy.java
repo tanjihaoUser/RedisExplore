@@ -4,9 +4,9 @@ import com.wait.entity.CacheSyncParam;
 import com.wait.entity.type.WriteStrategyType;
 import com.wait.util.AsyncSQLWrapper;
 import com.wait.util.BoundUtil;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -14,13 +14,12 @@ import org.springframework.stereotype.Component;
  * */
 @Component
 @Slf4j
+@RequiredArgsConstructor
 public class CacheAsideStrategy implements WriteStrategy {
 
-    @Autowired
-    private BoundUtil boundUtil;
+    private final BoundUtil boundUtil;
 
-    @Autowired
-    private AsyncSQLWrapper asyncSQLWrapper;
+    private final AsyncSQLWrapper asyncSQLWrapper;
 
     @Override
     public void write(CacheSyncParam param, ProceedingJoinPoint joinPoint) {
@@ -34,7 +33,7 @@ public class CacheAsideStrategy implements WriteStrategy {
             log.debug("Cache-Aside write strategy executed, key: {}", param.getKey());
 
         } catch (Exception e) {
-            log.error("Cache-Aside write strategy executed with error, key: {}", param, e);
+            log.error("Cache-Aside write strategy executed with error, key: {}", param.getKey(), e);
             throw new RuntimeException("write failed", e);
         }
     }
@@ -50,7 +49,7 @@ public class CacheAsideStrategy implements WriteStrategy {
 
             log.debug("Cache-Aside delete strategy executed: {}", param.getKey());
         } catch (Exception e) {
-            log.error("Cache-Aside delete strategy executed with error: {}", param, e);
+            log.error("Cache-Aside delete strategy executed with error, key: {}", param.getKey(), e);
             throw new RuntimeException("delete failed", e);
         }
     }

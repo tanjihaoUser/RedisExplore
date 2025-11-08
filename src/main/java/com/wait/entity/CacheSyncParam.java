@@ -25,7 +25,10 @@ public class CacheSyncParam<T> {
 
     // 可选字段
     private String messageTopic;
-    private Integer refreshInterval; // 刷新间隔（用于定时刷新策略）
+    private Integer refreshInterval; // 刷新间隔（用于定时刷新策略，单位：毫秒）
+
+    /** 默认刷新间隔：10秒 */
+    private static final int DEFAULT_REFRESH_INTERVAL_MS = 10000;
 
     public static CacheSyncParam getFromRedisCache(String key, RedisCache cache) {
         return CacheSyncParam.builder()
@@ -36,7 +39,8 @@ public class CacheSyncParam<T> {
                 .cacheNull(cache.isCacheNull())
                 .cacheType(cache.cacheType())
                 .clazz((Class<Object>) cache.returnType())
-                .refreshInterval(10000)
+                // 使用常量而非硬编码，便于后续扩展（如从注解中读取）
+                .refreshInterval(DEFAULT_REFRESH_INTERVAL_MS)
                 .build();
     }
 

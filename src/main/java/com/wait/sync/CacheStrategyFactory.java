@@ -54,8 +54,6 @@ public class CacheStrategyFactory {
     public ReadStrategy getDefaultReadStrategy(String cacheName) {
         if (cacheName.startsWith("config:")) {
             return getReadStrategy(ReadStrategyType.SCHEDULED_REFRESH);
-//        } else if (cacheName.startsWith("hot:")) {
-//            return getReadStrategy(ReadStrategyType.CACHE_FIRST);
         } else {
             return getReadStrategy(ReadStrategyType.LAZY_LOAD);
         }

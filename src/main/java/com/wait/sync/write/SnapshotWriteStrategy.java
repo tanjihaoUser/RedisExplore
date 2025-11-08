@@ -6,9 +6,10 @@ import com.wait.util.BoundUtil;
 import com.wait.util.instance.HashMappingUtil;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.stereotype.Component;
 
@@ -18,20 +19,19 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 全量更新策略 - 合并多次更新为一次全量更新
+ * 全量更新策略 - 合并多次更新为一次全量更新。使用场景与增量写一致，只是这里全量更新
  */
 @Component
 @Slf4j
+@RequiredArgsConstructor
 public class SnapshotWriteStrategy implements WriteStrategy {
 
-    @Autowired
-    private BoundUtil boundUtil;
+    private final BoundUtil boundUtil;
 
-    @Autowired
-    private ThreadPoolTaskScheduler taskScheduler;
+    @Qualifier("refreshScheduler")
+    private final ThreadPoolTaskScheduler taskScheduler;
 
-    @Autowired
-    private HashMappingUtil hashMappingUtil;
+    private final HashMappingUtil hashMappingUtil;
 
     /** 定时刷库延迟时间：60秒 */
     private static final long FLUSH_DELAY_MS = TimeUnit.SECONDS.toMillis(60);

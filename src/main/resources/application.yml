@@ -18,6 +18,8 @@ spring:
     # 数据库配置
     url: jdbc:mysql://localhost:3306/redis_use?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8
     username: root
+    # 生产环境应使用环境变量或配置中心，不要硬编码密码
+    # 示例：password: ${DB_PASSWORD:your_default_password}
     password: 233073
     driver-class-name: com.mysql.cj.jdbc.Driver
 
@@ -48,6 +50,7 @@ spring:
       stat-view-servlet:
         enabled: true
         url-pattern: /druid/*
+        # 注意：生产环境应使用强密码，建议通过环境变量配置
         login-username: admin
         login-password: admin
 
@@ -56,7 +59,7 @@ mybatis:
   # mapper.xml文件位置
   mapper-locations: classpath:mapper/*.xml
   # 实体类包路径
-  type-aliases-package: com.example.entity.domain
+  type-aliases-package: com.wait.entity.domain
   configuration:
     # 开启驼峰命名转换
     map-underscore-to-camel-case: true

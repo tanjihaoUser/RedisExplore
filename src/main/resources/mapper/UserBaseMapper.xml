@@ -48,11 +48,11 @@
         WHERE id = #{userId}
     </update>
 
-    <!-- 更新用户状态 -->
+    <!-- 更新用户基础信息 -->
     <update id="updateById">
         UPDATE user_base
-        SET username = #{username}, email = #{email}, phone = #{phone}, status = #{status}, user_type = #{user_type},
-        status = #{status}, update_time = NOW()
+        SET username = #{username}, email = #{email}, phone = #{phone}, 
+        user_type = #{userType}, status = #{status}, update_time = NOW()
         WHERE id = #{id}
     </update>
 

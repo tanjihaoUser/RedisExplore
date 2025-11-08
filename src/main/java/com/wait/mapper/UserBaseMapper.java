@@ -13,7 +13,7 @@ import java.util.List;
 public interface UserBaseMapper {
 
     @RedisCache(prefix = "user:base", key = "#id", expire = 3000, returnType = UserBase.class,
-                operation = DataOperationType.SELECT, readStrategy = ReadStrategyType.SCHEDULED_REFRESH)
+                operation = DataOperationType.SELECT, readStrategy = ReadStrategyType.LAZY_LOAD)
     UserBase selectById(@Param("id") Long id);
 
     UserBase selectByUsername(@Param("username") String username);

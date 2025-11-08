@@ -1,13 +1,14 @@
 package com.wait.util;
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
-import com.wait.entity.CacheSyncParam;
-import com.wait.service.MQService;
-import com.wait.util.message.CompensationMsg;
-import lombok.extern.slf4j.Slf4j;
+import java.sql.SQLException;
+import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.stream.Collectors;
+
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.reflect.MethodSignature;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DataAccessException;
 import org.springframework.retry.RetryContext;
@@ -16,29 +17,26 @@ import org.springframework.retry.annotation.Retryable;
 import org.springframework.retry.support.RetrySynchronizationManager;
 import org.springframework.stereotype.Component;
 
-import javax.annotation.PreDestroy;
-import java.sql.SQLException;
-import java.util.List;
-import java.util.concurrent.*;
-import java.util.stream.Collectors;
+import com.wait.entity.CacheSyncParam;
+import com.wait.service.MQService;
+import com.wait.util.message.CompensationMsg;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Component
 @Slf4j
+@RequiredArgsConstructor
 public class AsyncSQLWrapper {
 
     // 一个特殊的标记对象，用于标识void方法成功执行，但无需设置结果。使用一个静态实例避免创建过多对象。
     private static final VoidOperationResult VOID_OPERATION_RESULT = new VoidOperationResult();
 
-    @Autowired
     @Qualifier("thirdMQService")
-    private MQService mqService;
+    private final MQService mqService;
 
-    private final ExecutorService executor = new ThreadPoolExecutor(
-            5, 20, 60L, TimeUnit.SECONDS,
-            new LinkedBlockingQueue<>(1000),
-            new ThreadFactoryBuilder().setNameFormat("cache-pool-%d").build(),
-            new ThreadPoolExecutor.CallerRunsPolicy()
-    );
+    @Qualifier("asyncSqlExecutor")
+    private final ExecutorService executor;
 
     /**
      * 执行切面方法 - 统一入口使用一个内部包装方法，统一将Runnable和void方法转换为Callable。
@@ -81,12 +79,14 @@ public class AsyncSQLWrapper {
 
     /**
      * 统一的操作执行核心方法
-     * @param param 缓存参数
-     * @param operation 统一的操作（总是Callable）
+     * 
+     * @param param           缓存参数
+     * @param operation       统一的操作（总是Callable）
      * @param shouldSetResult 标志位，指示是否将操作结果设置到param中
      */
     @SuppressWarnings("unchecked")
-    private <T> void executeUnifiedOperation(CacheSyncParam<T> param, Callable<Object> operation, boolean shouldSetResult) {
+    private <T> void executeUnifiedOperation(CacheSyncParam<T> param, Callable<Object> operation,
+            boolean shouldSetResult) {
         // 将统一的Callable<Object>适配为Callable<T>，但实际执行逻辑由内部的lambda控制。
         // 我们通过shouldSetResult来决定是否设置结果。
         Callable<T> adaptedOperation = () -> {
@@ -156,13 +156,10 @@ public class AsyncSQLWrapper {
     }
 
     /**
-     * 带重试的执行逻辑（核心，无需修改）
+     * 带重试的执行逻辑
      */
-    @Retryable(
-            value = {SQLException.class, DataAccessException.class, RuntimeException.class},
-            maxAttempts = 3,
-            backoff = @Backoff(delay = 1000, multiplier = 2, maxDelay = 10000)
-    )
+    @Retryable(value = { SQLException.class, DataAccessException.class,
+            RuntimeException.class }, maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2, maxDelay = 10000))
     public <T> T executeWithRetry(Callable<T> operation, String key) throws Exception {
         RetryContext context = RetrySynchronizationManager.getContext();
         int retryCount = (context != null ? context.getRetryCount() : 0) + 1;
@@ -179,7 +176,7 @@ public class AsyncSQLWrapper {
     }
 
     /**
-     * 发送到补偿队列（无需修改）
+     * 发送到补偿队列
      */
     private <T> void sendToCompensationQueue(CacheSyncParam<T> param, Exception error) {
         try {
@@ -221,7 +218,7 @@ public class AsyncSQLWrapper {
     }
 
     /**
-     * 批量执行多个操作（无需修改，因为它只处理Callable）
+     * 批量执行多个操作
      */
     public <T> List<T> executeBatch(List<Callable<T>> operations) {
         List<CompletableFuture<T>> futures = operations.stream()
@@ -238,11 +235,6 @@ public class AsyncSQLWrapper {
         return futures.stream()
                 .map(CompletableFuture::join)
                 .collect(Collectors.toList());
-    }
-
-    @PreDestroy
-    public void destroy() {
-        // ... 关闭线程池逻辑不变
     }
 
     /**

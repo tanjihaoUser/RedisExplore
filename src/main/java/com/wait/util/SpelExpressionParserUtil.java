@@ -1,6 +1,6 @@
 package com.wait.util;
 
-import io.netty.util.internal.StringUtil;
+import org.springframework.util.StringUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.ibatis.annotations.Param;
 import org.aspectj.lang.ProceedingJoinPoint;
@@ -219,7 +219,7 @@ public class SpelExpressionParserUtil {
             }
 
             String keyString = keyValue.toString();
-            if (!StringUtil.isNullOrEmpty(prefix)) {
+            if (StringUtils.hasText(prefix)) {
                 return prefix + ":" + keyString;
             }
             return keyString;

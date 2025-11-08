@@ -8,25 +8,26 @@ import com.wait.entity.type.WriteStrategyType;
 import com.wait.util.AsyncSQLWrapper;
 import com.wait.util.BoundUtil;
 import com.wait.util.message.CompensationMsg;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
+/**
+ * 对于写入量较大，且对一致性要求不高的场景，或者对性能和延时有较高要求，可以采用MQ异步写入的方式，提高写入性能
+ * */
 @Component
 @Slf4j
+@RequiredArgsConstructor
 public class MQWriteBehindStrategy implements WriteStrategy {
 
-    @Autowired
-    private BoundUtil boundUtil;
+    private final BoundUtil boundUtil;
 
-    @Autowired
-    @Qualifier("thirdMQService") // 注入第三方MQ服务
-    private MQService mqService;
+    @Qualifier("thirdMQService")
+    private final MQService mqService;
 
-    @Autowired
-    private AsyncSQLWrapper asyncSQLWrapper;
+    private final AsyncSQLWrapper asyncSQLWrapper;
 
     @Override
     public void write(CacheSyncParam param, ProceedingJoinPoint joinPoint) {

@@ -2,6 +2,7 @@ package com.wait.controller;
 
 import com.wait.entity.domain.UserSession;
 import com.wait.service.SessionService;
+import com.wait.util.ResponseUtil;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,21 +26,11 @@ public class SessionController {
      */
     @PostMapping("/login")
     public ResponseEntity<Map<String, Object>> login(@RequestBody LoginRequest request) {
-        try {
             UserSession session = sessionService.createSession(request.getUsername(), request.getPassword());
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("sessionId", session.getSessionId());
-            response.put("session", session);
-
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("success", false);
-            errorResponse.put("message", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
-        }
+        Map<String, Object> extraFields = new HashMap<>();
+        extraFields.put("sessionId", session.getSessionId());
+        return ResponseUtil.success(extraFields, session);
     }
 
     /**
@@ -48,18 +39,8 @@ public class SessionController {
      */
     @GetMapping("/{sessionId}")
     public ResponseEntity<Map<String, Object>> getSession(@PathVariable String sessionId) {
-        try {
             UserSession session = sessionService.getSession(sessionId);
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("data", session);
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("success", false);
-            errorResponse.put("message", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
-        }
+        return ResponseUtil.success(session);
     }
 
     /**
@@ -70,18 +51,8 @@ public class SessionController {
     public ResponseEntity<Map<String, Object>> updateSession(
             @PathVariable String sessionId,
             @RequestBody UserSession sessionUpdate) {
-        try {
             UserSession updatedSession = sessionService.updateSession(sessionId, sessionUpdate);
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("data", updatedSession);
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("success", false);
-            errorResponse.put("message", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
-        }
+        return ResponseUtil.success(updatedSession);
     }
 
     /**
@@ -92,18 +63,8 @@ public class SessionController {
     public ResponseEntity<Map<String, Object>> partialUpdateSession(
             @PathVariable String sessionId,
             @RequestBody Map<String, Object> updates) {
-        try {
             UserSession updatedSession = sessionService.partialUpdateSession(sessionId, updates);
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("data", updatedSession);
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("success", false);
-            errorResponse.put("message", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
-        }
+        return ResponseUtil.success(updatedSession);
     }
 
     /**
@@ -112,18 +73,8 @@ public class SessionController {
      */
     @PostMapping("/{sessionId}/activity")
     public ResponseEntity<Map<String, Object>> recordActivity(@PathVariable String sessionId) {
-        try {
             sessionService.recordActivity(sessionId);
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("message", "活动记录成功");
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("success", false);
-            errorResponse.put("message", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
-        }
+        return ResponseUtil.success("活动记录成功");
     }
 
     /**
@@ -134,19 +85,9 @@ public class SessionController {
     public ResponseEntity<Map<String, Object>> updateCurrentPage(
             @PathVariable String sessionId,
             @RequestBody Map<String, String> request) {
-        try {
             String currentPage = request.get("currentPage");
             sessionService.updateCurrentPage(sessionId, currentPage);
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("message", "页面更新成功");
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("success", false);
-            errorResponse.put("message", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
-        }
+        return ResponseUtil.success("页面更新成功");
     }
 
     /**
@@ -157,18 +98,8 @@ public class SessionController {
     public ResponseEntity<Map<String, Object>> updatePreferences(
             @PathVariable String sessionId,
             @RequestBody PreferenceRequest request) {
-        try {
             sessionService.updatePreferences(sessionId, request.getTheme(), request.getLanguage());
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("message", "偏好更新成功");
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("success", false);
-            errorResponse.put("message", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
-        }
+        return ResponseUtil.success("偏好更新成功");
     }
 
     /**
@@ -179,18 +110,8 @@ public class SessionController {
     public ResponseEntity<Map<String, Object>> setAttribute(
             @PathVariable String sessionId,
             @RequestBody AttributeRequest request) {
-        try {
             sessionService.setAttribute(sessionId, request.getKey(), request.getValue());
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("message", "属性设置成功");
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("success", false);
-            errorResponse.put("message", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
-        }
+        return ResponseUtil.success("属性设置成功");
     }
 
     /**
@@ -201,19 +122,11 @@ public class SessionController {
     public ResponseEntity<Map<String, Object>> getAttribute(
             @PathVariable String sessionId,
             @PathVariable String key) {
-        try {
             Object value = sessionService.getAttribute(sessionId, key);
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("key", key);
-            response.put("value", value);
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("success", false);
-            errorResponse.put("message", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
-        }
+        Map<String, Object> data = new HashMap<>();
+        data.put("key", key);
+        data.put("value", value);
+        return ResponseUtil.success(data);
     }
 
     /**
@@ -222,18 +135,8 @@ public class SessionController {
      */
     @DeleteMapping("/{sessionId}")
     public ResponseEntity<Map<String, Object>> logout(@PathVariable String sessionId) {
-        try {
             sessionService.deleteSession(sessionId);
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("message", "登出成功");
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("success", false);
-            errorResponse.put("message", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
-        }
+        return ResponseUtil.success("登出成功");
     }
 
     /**
@@ -243,10 +146,9 @@ public class SessionController {
     @GetMapping("/{sessionId}/validate")
     public ResponseEntity<Map<String, Object>> validateSession(@PathVariable String sessionId) {
         boolean isValid = sessionService.validateSession(sessionId);
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", true);
-        response.put("valid", isValid);
-        return ResponseEntity.ok(response);
+        Map<String, Object> data = new HashMap<>();
+        data.put("valid", isValid);
+        return ResponseUtil.success(data);
     }
 
     // 请求对象定义

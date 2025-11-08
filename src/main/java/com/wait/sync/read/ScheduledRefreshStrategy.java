@@ -1,39 +1,40 @@
 package com.wait.sync.read;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
+
+import org.aspectj.lang.ProceedingJoinPoint;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
+import org.springframework.stereotype.Component;
+
 import com.wait.entity.CacheResult;
 import com.wait.entity.CacheSyncParam;
 import com.wait.entity.type.ReadStrategyType;
 import com.wait.util.AsyncSQLWrapper;
 import com.wait.util.BoundUtil;
-import lombok.extern.slf4j.Slf4j;
-import org.aspectj.lang.ProceedingJoinPoint;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
-import org.springframework.stereotype.Component;
 
-import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ScheduledFuture;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * 定时刷新缓存，主动推送，数据始终在缓存中，读请求的命中率极高，性能很好。
- * */
+ * 多用于数据的预热，如排行榜、热点新闻、全局配置。
+ */
 @Component
 @Slf4j
+@RequiredArgsConstructor
 public class ScheduledRefreshStrategy implements ReadStrategy {
 
-    @Autowired
-    private BoundUtil boundUtil;
+    private final BoundUtil boundUtil;
 
-    @Autowired
     @Qualifier("refreshScheduler")
-    private ThreadPoolTaskScheduler taskScheduler;
+    private final ThreadPoolTaskScheduler taskScheduler;
 
-    @Autowired
-    private AsyncSQLWrapper asyncSQLWrapper;
+    private final AsyncSQLWrapper asyncSQLWrapper;
 
     private final Map<String, ScheduledFuture<?>> refreshTasks = new ConcurrentHashMap<>();
 
@@ -82,11 +83,11 @@ public class ScheduledRefreshStrategy implements ReadStrategy {
             try {
                 asyncSQLWrapper.executeAspectMethod(param, joinPoint);
                 boundUtil.writeWithRetry(param, 3);
-                SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
-                String currentTime = sdf.format(new Date());
-                log.debug("refresh success, key: {}, value: {}, time: {}", param.getKey(), param.getNewValue(), currentTime);
+                String currentTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS"));
+                log.debug("refresh success, key: {}, value: {}, time: {}", param.getKey(), param.getNewValue(),
+                        currentTime);
             } catch (Exception e) {
-                log.error("schedule refresh fail: {}", param);
+                log.error("schedule refresh fail: {}", param.getKey(), e);
             }
         }, param.getRefreshInterval());
 

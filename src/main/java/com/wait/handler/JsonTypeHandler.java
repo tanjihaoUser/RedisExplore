@@ -11,6 +11,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Map;
 
+/**
+ * MyBatis类型处理器 - 用于将数据库中的JSON字符串转换为Map对象
+ * 支持将Map<String, Object>类型的字段自动序列化/反序列化
+ */
 public class JsonTypeHandler extends BaseTypeHandler<Map<String, Object>> {
 
     private static final ObjectMapper mapper = new ObjectMapper();

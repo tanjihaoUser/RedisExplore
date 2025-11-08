@@ -4,9 +4,9 @@ import com.wait.entity.CacheSyncParam;
 import com.wait.entity.type.WriteStrategyType;
 import com.wait.util.AsyncSQLWrapper;
 import com.wait.util.BoundUtil;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -15,13 +15,11 @@ import org.springframework.stereotype.Component;
  * */
 @Component
 @Slf4j
+@RequiredArgsConstructor
 public class WriteThroughStrategy implements WriteStrategy {
 
-    @Autowired
-    private BoundUtil boundUtil;
-
-    @Autowired
-    private AsyncSQLWrapper asyncSQLWrapper;
+    private final BoundUtil boundUtil;
+    private final AsyncSQLWrapper asyncSQLWrapper;
 
     @Override
     public void write(CacheSyncParam param, ProceedingJoinPoint joinPoint) {

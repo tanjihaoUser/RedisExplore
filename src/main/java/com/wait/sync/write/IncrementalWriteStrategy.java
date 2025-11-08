@@ -1,18 +1,5 @@
 package com.wait.sync.write;
 
-import com.wait.entity.CacheSyncParam;
-import com.wait.entity.type.WriteStrategyType;
-import com.wait.util.BoundUtil;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.extern.slf4j.Slf4j;
-import org.aspectj.lang.ProceedingJoinPoint;
-import org.aspectj.lang.reflect.MethodSignature;
-import org.apache.ibatis.annotations.Param;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
-import org.springframework.stereotype.Component;
-
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.util.Date;
@@ -22,24 +9,41 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.ibatis.annotations.Param;
+import org.aspectj.lang.ProceedingJoinPoint;
+import org.aspectj.lang.reflect.MethodSignature;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
+import org.springframework.stereotype.Component;
+
+import com.wait.entity.CacheSyncParam;
+import com.wait.entity.type.WriteStrategyType;
+import com.wait.util.BoundUtil;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
 /**
- * 增量更新策略 - 通过修改方法参数实现批量增量更新
+ * 增量更新策略，不立即更新数据库，由定时任务执行数据库写入，通过修改方法参数实现批量增量更新
+ * 适用于对写入性能要求极高，但对数据一致性和可靠性要求不高的场景，如帖子点赞数、视频播放量。
  */
 @Component
 @Slf4j
+@RequiredArgsConstructor
 public class IncrementalWriteStrategy implements WriteStrategy {
 
     /** 定时刷库延迟时间：2分钟 */
     private static final long FLUSH_DELAY_MS = TimeUnit.SECONDS.toMillis(120);
-    
+
     /** 重试延迟时间：60秒 */
     private static final long RETRY_DELAY_MS = TimeUnit.SECONDS.toMillis(60);
 
-    @Autowired
-    private BoundUtil boundUtil;
+    private final BoundUtil boundUtil;
 
-    @Autowired
-    private ThreadPoolTaskScheduler taskScheduler;
+    @Qualifier("refreshScheduler")
+    private final ThreadPoolTaskScheduler taskScheduler;
 
     // 存储每个key对应的增量/覆盖任务和原始joinPoint
     private final Map<String, IncrementalTask> taskBuffer = new ConcurrentHashMap<>();
@@ -47,34 +51,24 @@ public class IncrementalWriteStrategy implements WriteStrategy {
 
     @Override
     public void write(CacheSyncParam param, ProceedingJoinPoint joinPoint) {
-        // 增量写策略不在AOP中先执行数据库操作，统一由定时任务执行
-        // 所以 firstCallExecuted 始终为 false
-        write(param, joinPoint, false);
-    }
-
-    /**
-     * 内部方法：支持指定是否第一次调用且已执行过原始方法
-     * 注意：现在增量策略不在AOP中先执行，所以 firstCallExecuted 通常为 false
-     * 保留此参数用于向后兼容或特殊场景
-     */
-    public void write(CacheSyncParam param, ProceedingJoinPoint joinPoint, boolean firstCallExecuted) {
         String key = param.getKey();
 
         try {
-            // 1. 解析此次调用的“多属性变更”，区分：增量字段 与 覆盖字段
+            // 1. 解析参数中的“多属性变更”，区分：增量字段 与 覆盖字段
             ChangeBundle changeBundle = parseChangeBundle(joinPoint);
 
             // 2. 立即更新Redis（能识别的场景尽量更新，识别不了则延后以DB为准）
             updateRedisImmediately(key, changeBundle, param, joinPoint);
 
             // 3. 缓冲任务（对同一key进行合并：增量相加、覆盖取最近值）
-            bufferIncrementalTask(key, changeBundle, joinPoint, firstCallExecuted);
+            bufferIncrementalTask(key, changeBundle, joinPoint);
 
             // 4. 启动定时刷库任务（统一由定时任务执行数据库写入）
+            // 中间更新多次都放到IncrementalTask中，写入数据库时根据key获取，定时任务不用改动
             scheduleFlushTask(key);
 
-            log.debug("IncrementalWrite Buffered changes, key: {}, incIdx: {}, setIdx: {}, firstCallExecuted: {}",
-                    key, changeBundle.numericIncrements.keySet(), changeBundle.latestReplacements.keySet(), firstCallExecuted);
+            log.debug("IncrementalWrite Buffered changes, key: {}, incIdx: {}, setIdx: {}",
+                    key, changeBundle.numericIncrements.keySet(), changeBundle.latestReplacements.keySet());
 
         } catch (Exception e) {
             log.error("IncrementalWrite: Failed to process, key: {}", key, e);
@@ -82,9 +76,9 @@ public class IncrementalWriteStrategy implements WriteStrategy {
         }
     }
 
+    // 删除操作直接执行，不进行缓冲
     @Override
     public void delete(CacheSyncParam param, ProceedingJoinPoint joinPoint) {
-        // 删除操作直接执行，不进行缓冲
         try {
             // 1. 删除Redis缓存
             boundUtil.del(param.getKey());
@@ -106,15 +100,14 @@ public class IncrementalWriteStrategy implements WriteStrategy {
 
     /**
      * 缓冲增量/覆盖任务
-     * @param firstCallExecuted 是否为第一次调用且已执行过原始方法
      */
-    private void bufferIncrementalTask(String key, ChangeBundle changeBundle, ProceedingJoinPoint joinPoint, boolean firstCallExecuted) {
+    private void bufferIncrementalTask(String key, ChangeBundle changeBundle, ProceedingJoinPoint joinPoint) {
         taskBuffer.compute(key, (k, existingTask) -> {
             if (existingTask == null) {
                 long now = System.currentTimeMillis();
-                IncrementalTask task = new IncrementalTask(joinPoint, new HashMap<>(), new HashMap<>(), now, now, firstCallExecuted);
+                IncrementalTask task = new IncrementalTask(joinPoint, new HashMap<>(), new HashMap<>(), now, now);
                 mergeIntoTask(task, changeBundle);
-                log.debug("create new incremental task, key: {}, time: {}, firstCallExecuted: {}", key, now, firstCallExecuted);
+                log.debug("create new incremental task, key: {}, time: {}", key, now);
                 return task;
             } else {
                 mergeIntoTask(existingTask, changeBundle);
@@ -160,7 +153,7 @@ public class IncrementalWriteStrategy implements WriteStrategy {
      */
     private boolean isIntegerType(Number num) {
         return num instanceof Integer || num instanceof Long ||
-               num instanceof Short || num instanceof Byte;
+                num instanceof Short || num instanceof Byte;
     }
 
     /**
@@ -178,8 +171,7 @@ public class IncrementalWriteStrategy implements WriteStrategy {
         // 任务不存在或已取消/完成，创建新任务
         ScheduledFuture<?> future = taskScheduler.schedule(
                 () -> flushToDatabase(key),
-                new Date(System.currentTimeMillis() + FLUSH_DELAY_MS)
-        );
+                new Date(System.currentTimeMillis() + FLUSH_DELAY_MS));
 
         flushTasks.put(key, future);
         log.debug("Scheduled task created, key: {}, delay: {}ms", key, FLUSH_DELAY_MS);
@@ -196,34 +188,22 @@ public class IncrementalWriteStrategy implements WriteStrategy {
 
         flushTasks.remove(key);
 
-        // 注意：现在增量策略不在AOP中先执行，所以 firstCallExecuted 通常为 false
-        // 保留此判断逻辑用于向后兼容，但实际不会触发跳过逻辑
-        if (task.isFirstCallExecuted()) {
-            // 如果任务创建后没有后续更新（lastUpdateTime == 创建时间），说明只有第一次调用
-            // 注意：mergeIntoTask 会更新 lastUpdateTime，所以如果有后续调用，lastUpdateTime 会大于创建时间
-            if (task.getLastUpdateTime() == task.getCreateTime() || 
-                (task.getNumericDeltas().isEmpty() && task.getLatestValues().isEmpty())) {
-                log.debug("IncrementalWrite Skip flush for first call only (already executed), key: {}", key);
-                return;
-            }
-        }
-
         try {
             // 基于原始参数进行合并：
-            //  数值型增量：用累计增量替换对应参数（由SQL执行 "col = col + #{arg}"）
-            //  覆盖型字段：用最新值替换对应参数
+            // 数值型增量：用累计增量替换对应参数（由SQL执行 "col = col + #{arg}"）
+            // 覆盖型字段：用最新值替换对应参数
             Object[] modifiedArgs = modifyJoinPointArgs(task);
 
             // 使用修改后的参数执行原始MyBatis方法
             task.getJoinPoint().proceed(modifiedArgs);
 
-            log.info("IncrementalWrite Flushed to database, key: {}, deltaArgs: {}, latestArgs: {}, firstCallExecuted: {}",
-                    key, task.getNumericDeltas().keySet(), task.getLatestValues().keySet(), task.isFirstCallExecuted());
+            log.info("IncrementalWrite Flushed to database, key: {}, deltaArgs: {}, latestArgs: {}",
+                    key, task.getNumericDeltas().keySet(), task.getLatestValues().keySet());
 
             // 刷新成功后，如果还有新的数据等待刷新，继续创建定时任务
             IncrementalTask remainingTask = taskBuffer.get(key);
-            if (remainingTask != null && 
-                (!remainingTask.getNumericDeltas().isEmpty() || !remainingTask.getLatestValues().isEmpty())) {
+            if (remainingTask != null &&
+                    (!remainingTask.getNumericDeltas().isEmpty() || !remainingTask.getLatestValues().isEmpty())) {
                 log.debug("More data pending after flush, reschedule task, key: {}", key);
                 scheduleFlushTask(key);
             }
@@ -258,7 +238,8 @@ public class IncrementalWriteStrategy implements WriteStrategy {
             int idx = e.getKey();
             if (idx >= 0 && idx < modifiedArgs.length) {
                 Object val = e.getValue();
-                Class<?> target = idx < paramTypes.length ? paramTypes[idx] : (val != null ? val.getClass() : Object.class);
+                Class<?> target = idx < paramTypes.length ? paramTypes[idx]
+                        : (val != null ? val.getClass() : Object.class);
                 modifiedArgs[idx] = convertToType(val, target);
             }
         }
@@ -277,8 +258,10 @@ public class IncrementalWriteStrategy implements WriteStrategy {
     }
 
     private Object convertToType(Object value, Class<?> targetType) {
-        if (value == null) return null;
-        if (targetType.isInstance(value)) return value;
+        if (value == null)
+            return null;
+        if (targetType.isInstance(value))
+            return value;
 
         // 处理原始类型和包装类型的转换
         if (value instanceof Number) {
@@ -286,23 +269,17 @@ public class IncrementalWriteStrategy implements WriteStrategy {
             // 直接处理原始类型，避免二次判断
             if (targetType == int.class || targetType == Integer.class) {
                 return n.intValue();
-            }
-            if (targetType == long.class || targetType == Long.class) {
+            } else if (targetType == long.class || targetType == Long.class) {
                 return n.longValue();
-            }
-            if (targetType == double.class || targetType == Double.class) {
+            } else if (targetType == double.class || targetType == Double.class) {
                 return n.doubleValue();
-            }
-            if (targetType == float.class || targetType == Float.class) {
+            } else if (targetType == float.class || targetType == Float.class) {
                 return n.floatValue();
-            }
-            if (targetType == short.class || targetType == Short.class) {
+            } else if (targetType == short.class || targetType == Short.class) {
                 return n.shortValue();
-            }
-            if (targetType == byte.class || targetType == Byte.class) {
+            } else if (targetType == byte.class || targetType == Byte.class) {
                 return n.byteValue();
-            }
-            if (targetType == boolean.class || targetType == Boolean.class) {
+            } else if (targetType == boolean.class || targetType == Boolean.class) {
                 return n.intValue() != 0;
             }
         }
@@ -311,16 +288,17 @@ public class IncrementalWriteStrategy implements WriteStrategy {
             if (targetType == String.class) {
                 return String.valueOf(value);
             }
-        } catch (Exception ignore) {
+        } catch (Exception e) {
+            log.debug("Failed to convert value to String, using original value", e);
         }
         // 回退：直接返回，交由反射校验或抛错
         return value;
     }
 
     // 解析一次调用的变更集合：
-    //  - 参数索引0通常为主键，保留不动
-    //  - 对于 Number 类型参数：视为增量；若被判定为"时间戳"，则作为覆盖
-    //  - 对于非 Number：作为覆盖型字段
+    // 参数索引0通常为主键，保留不动
+    // 对于 Number 类型参数：视为增量；若被判定为"时间戳"，则作为覆盖
+    // 对于非 Number：作为覆盖型字段
     private ChangeBundle parseChangeBundle(ProceedingJoinPoint joinPoint) {
         Object[] args = joinPoint.getArgs();
         Map<Integer, Number> numericIncrements = new HashMap<>();
@@ -347,7 +325,7 @@ public class IncrementalWriteStrategy implements WriteStrategy {
                     numericIncrements.put(i, num);
                 }
             } else {
-                // 非 Number 类型直接存储原始值
+                // 非 Number 类型存储原始值，作为覆盖型字段
                 latestReplacements.put(i, arg);
             }
         }
@@ -360,7 +338,8 @@ public class IncrementalWriteStrategy implements WriteStrategy {
         return val > 1_000_000_000_00L; // 10^11
     }
 
-    private void updateRedisImmediately(String key, ChangeBundle changeBundle, CacheSyncParam param, ProceedingJoinPoint joinPoint) {
+    private void updateRedisImmediately(String key, ChangeBundle changeBundle, CacheSyncParam param,
+            ProceedingJoinPoint joinPoint) {
         try {
             // 仅在可明确映射的情况下执行即时更新，避免误写
             switch (param.getCacheType()) {
@@ -368,11 +347,25 @@ public class IncrementalWriteStrategy implements WriteStrategy {
                     // STRING 场景默认视为简单计数器（第一个非主键Number参数为增量）
                     Map<Integer, Number> inc = changeBundle.numericIncrements;
                     if (!inc.isEmpty()) {
-                        // 取所有元素的和作为delta累加（使用 Long 类型，Redis 只支持整数）
-                        long delta = inc.values().stream()
-                                .mapToLong(Number::longValue)
-                                .sum();
-                        boundUtil.incrBy(key, delta);
+                        // 判断是否包含浮点数，如果包含则使用 INCRBYFLOAT，否则使用 INCRBY
+                        // ⚠️ 注意：INCRBYFLOAT 存在浮点数精度误差（IEEE 754 双精度浮点数）
+                        // 对于需要精确计算的场景（如金额），建议使用整数存储法（参见 BoundUtil.incrByFloatAsInteger）
+                        boolean hasFloat = inc.values().stream()
+                                .anyMatch(n -> n instanceof Double || n instanceof Float);
+                        if (hasFloat) {
+                            // 包含浮点数，使用 INCRBYFLOAT（注意：存在精度误差）
+                            // 如需精确计算，建议在业务层使用整数存储法或 BigDecimal
+                            double delta = inc.values().stream()
+                                    .mapToDouble(Number::doubleValue)
+                                    .sum();
+                            boundUtil.incrByFloat(key, delta);
+                        } else {
+                            // 全是整数，使用 INCRBY（无精度问题）
+                            long delta = inc.values().stream()
+                                    .mapToLong(Number::longValue)
+                                    .sum();
+                            boundUtil.incrBy(key, delta);
+                        }
                     }
                     break;
                 case HASH: {
@@ -388,11 +381,22 @@ public class IncrementalWriteStrategy implements WriteStrategy {
                     if (!setMap.isEmpty()) {
                         boundUtil.hSetAll(key, setMap);
                     }
-                    // 数值增量：逐个 HINCRBY（Redis HINCRBY 只支持整数，使用 longValue）
+                    // 数值增量：根据类型选择 HINCRBY 或 HINCRBYFLOAT
+                    // 注意：HINCRBYFLOAT 存在浮点数精度误差（IEEE 754 双精度浮点数）
+                    // 对于需要精确计算的场景（如金额），建议使用整数存储法（参见 BoundUtil.incrByFloatAsInteger）
+                    // 这里使用 HINCRBYFLOAT 是为了保持代码的灵活性，实际业务中应根据精度要求选择方案
                     for (Map.Entry<Integer, Number> e : changeBundle.numericIncrements.entrySet()) {
                         String field = idxToName.get(e.getKey());
                         if (field != null) {
-                            boundUtil.hIncrBy(key, field, e.getValue().longValue());
+                            Number value = e.getValue();
+                            if (value instanceof Double || value instanceof Float) {
+                                // 使用 HINCRBYFLOAT（注意：存在精度误差）
+                                // 如需精确计算，建议在业务层使用整数存储法或 BigDecimal
+                                boundUtil.hIncrByFloat(key, field, value.doubleValue());
+                            } else {
+                                // 整数类型使用 HINCRBY（无精度问题）
+                                boundUtil.hIncrBy(key, field, value.longValue());
+                            }
                         }
                     }
                     break;
@@ -416,8 +420,7 @@ public class IncrementalWriteStrategy implements WriteStrategy {
         cancelFlushTask(key);
         ScheduledFuture<?> future = taskScheduler.schedule(
                 () -> flushToDatabase(key),
-                new Date(System.currentTimeMillis() + RETRY_DELAY_MS)
-        );
+                new Date(System.currentTimeMillis() + RETRY_DELAY_MS));
         flushTasks.put(key, future);
         log.debug("Scheduled retry task, key: {}, delay: {}ms", key, RETRY_DELAY_MS);
     }
@@ -451,7 +454,6 @@ public class IncrementalWriteStrategy implements WriteStrategy {
         private Map<Integer, Object> latestValues;
         private long createTime; // 任务创建时间
         private long lastUpdateTime; // 最后一次更新时间
-        private boolean firstCallExecuted; // 是否为第一次调用且已执行过原始方法
     }
 
     @Data

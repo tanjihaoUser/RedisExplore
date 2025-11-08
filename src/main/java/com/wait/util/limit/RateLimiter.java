@@ -2,7 +2,6 @@ package com.wait.util.limit;
 
 import com.wait.util.BoundUtil;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.format.DateTimeFormatter;
 import java.util.concurrent.TimeUnit;
@@ -13,8 +12,12 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public abstract class RateLimiter {
 
-    @Autowired
-    protected BoundUtil boundUtil;
+    protected final BoundUtil boundUtil;
+
+    // 使用构造器注入，让子类负责注入依赖。这里可以声明公共的属性赋值和初始化逻辑，便于复用
+    protected RateLimiter(BoundUtil boundUtil) {
+        this.boundUtil = boundUtil;
+    }
 
     public static final String LIMIT_STR = "limit:";
 

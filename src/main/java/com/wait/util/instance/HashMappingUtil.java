@@ -2,7 +2,7 @@ package com.wait.util.instance;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
@@ -12,10 +12,10 @@ import java.util.Map;
  * HashMap和类的相互转换
  * */
 @Component
+@RequiredArgsConstructor
 public class HashMappingUtil {
 
-    @Autowired
-    private ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper;
 
     /**
      * 将Hash Map转换为指定类型的对象

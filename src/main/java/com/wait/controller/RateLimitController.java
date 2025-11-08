@@ -18,9 +18,9 @@ public class RateLimitController {
     @Autowired
     private RateLimitServiceImpl rateLimitService;
 
-    private int DEFAULT_LIMIT = 10;
-    private int DEFAULT_INTERVAL = 1;
-    private TimeUnit DEFAULT_TIMEUNIT = TimeUnit.SECONDS;
+    private static final int DEFAULT_LIMIT = 10;
+    private static final int DEFAULT_INTERVAL = 1;
+    private static final TimeUnit DEFAULT_TIMEUNIT = TimeUnit.SECONDS;
 
     @PostMapping("/ratelimit")
     public Object getKeyWithRateLimit(@RequestParam("key") String key) {
@@ -29,26 +29,16 @@ public class RateLimitController {
     }
 
     @PostMapping("/rateSlideWindow")
-    @RateLimit(
-            key = "#key",
-            window = 1,
-            unit = TimeUnit.SECONDS,
-            limit = 10,
-            type = LimitType.SLIDE_WINDOW
-    )
+    @RateLimit(key = "#key", window = 1, unit = TimeUnit.SECONDS,
+            limit = 10, type = LimitType.SLIDE_WINDOW)
     public Object getKeyWithSlideWindow(@RequestParam("key") String key) {
         int value = rateLimitService.getByKey(key, Integer.class);
         return value;
     }
 
     @PostMapping("/rateTokenBucket")
-    @RateLimit(
-            key = "#key",
-            window = 1,
-            unit = TimeUnit.SECONDS,
-            limit = 10,
-            type = LimitType.TOKEN_BUCKET
-    )
+    @RateLimit( key = "#key", window = 1, unit = TimeUnit.SECONDS,
+            limit = 10, type = LimitType.TOKEN_BUCKET)
     public Object getKeyWithTokenBucket(@RequestParam("key") String key) {
         int value = rateLimitService.getByKey(key, Integer.class);
         return value;

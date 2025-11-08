@@ -206,9 +206,6 @@ public class MemoryMQServiceImpl implements MQService {
         if (dlqSize > 1000) {
             log.error("MemoryMQ: 死信队列堆积严重, 当前大小: {}", dlqSize);
         }
-
-//        log.debug("MemoryMQ状态 - 普通队列: {}/{}, 死信队列: {}/{}",
-//                size, size + remaining, dlqSize, dlqQueue.remainingCapacity() + dlqSize);
     }
 
     /**
@@ -248,6 +245,7 @@ public class MemoryMQServiceImpl implements MQService {
         final String topic;
         final String key;
         final Object message;
+        @SuppressWarnings("unused") // timestamp字段保留用于未来可能的消息排序或过期检查
         final long timestamp;
 
         MQMessage(String topic, String key, Object message, long timestamp) {

@@ -1,15 +1,20 @@
 package com.wait.util;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.wait.entity.CacheResult;
-import com.wait.entity.CacheSyncParam;
-import com.wait.entity.NullObject;
-import com.wait.entity.type.CacheType;
-import com.wait.exception.CacheOperationException;
-import com.wait.util.instance.HashMappingUtil;
-import com.wait.util.instance.InstanceFactory;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
+import java.net.SocketTimeoutException;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
+
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.InvalidDataAccessApiUsageException;
@@ -25,20 +30,17 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
 
-import java.net.SocketTimeoutException;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Supplier;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wait.entity.CacheResult;
+import com.wait.entity.CacheSyncParam;
+import com.wait.entity.NullObject;
+import com.wait.entity.type.CacheType;
+import com.wait.exception.CacheOperationException;
+import com.wait.util.instance.HashMappingUtil;
+import com.wait.util.instance.InstanceFactory;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * 支持任意类型的 Redis 工具类
@@ -46,30 +48,27 @@ import java.util.function.Supplier;
  */
 @Component
 @Slf4j
+@RequiredArgsConstructor
 public class BoundUtil {
 
-    @Autowired
-    private RedisTemplate<String, Object> redisTemplate;
+    private final RedisTemplate<String, Object> redisTemplate;
 
-    @Autowired
-    private Map<String, DefaultRedisScript<Long>> luaScriptMap;
+    private final Map<String, DefaultRedisScript<Long>> luaScriptMap;
 
-    @Autowired
-    private HashMappingUtil hashMappingUtil;
+    private final HashMappingUtil hashMappingUtil;
 
-    @Autowired
-    private ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper;
 
-    @Autowired
-    private InstanceFactory instanceFactory;
+    private final InstanceFactory instanceFactory;
 
-    @Autowired
     @Qualifier("retryExecutor")
-    private ThreadPoolTaskExecutor retryExecutor;
+    private final ThreadPoolTaskExecutor retryExecutor;
 
     public static final int NULL_CACHE_TIME = 30; // 空值缓存时间
     public static final TimeUnit NULL_CACHE_TIME_UNIT = TimeUnit.SECONDS; // 空值缓存时间
-    private final Random random = new Random();
+
+    // 使用ThreadLocalRandom提高并发性能
+    // Random在多线程环境下性能较差，ThreadLocalRandom是专门为并发场景设计的
 
     /**
      * 同步带重试的读操作
@@ -102,7 +101,8 @@ public class BoundUtil {
             try {
                 writeWithRetry(param, maxRetries);
             } catch (Exception e) {
-                log.error("Async cache update finally failed for key: {}. Manual compensation may be needed.", param.getKey(), e);
+                log.error("Async cache update finally failed for key: {}. Manual compensation may be needed.",
+                        param.getKey(), e);
                 // 此处不向外抛出异常，因为这是"最大努力"。可以记录到补偿表供后续处理。
             }
         }, retryExecutor);
@@ -194,7 +194,7 @@ public class BoundUtil {
         long delay = Math.min(exponentialDelay, maxDelayMs);
 
         // 随机抖动: 添加0-1秒的随机值，避免多个客户端同时重试（惊群效应）
-        long jitter = (long) (Math.random() * 1000);
+        long jitter = ThreadLocalRandom.current().nextLong(0, 1000);
         return delay + jitter;
     }
 
@@ -301,7 +301,7 @@ public class BoundUtil {
     private int getRandomExpire(int baseExpire) {
         // 在基础过期时间上增加随机偏移（±20%）
         int offset = (int) (baseExpire * 0.2);
-        int randomOffset = random.nextInt(offset * 2) - offset;
+        int randomOffset = ThreadLocalRandom.current().nextInt(-offset, offset + 1);
         return Math.max(1, baseExpire + randomOffset); // 确保不小于1
     }
 
@@ -479,6 +479,12 @@ public class BoundUtil {
         return boundValue(key).increment(delta);
     }
 
+    /**
+     * 浮点数增量操作（INCRBYFLOAT）
+     * 精度警告：Redis 使用 IEEE 754 双精度浮点数，存在精度误差
+     * 示例：incrbyfloat key 2.2 可能返回 "23.19999999999999929" 而不是 "23.2"
+     * 建议：对于金额、价格等需要精确计算的场景，使用整数存储法，将浮点数乘以倍数（如100、1000）转为整数存储
+     */
     public Double incrByFloat(String key, double delta) {
         return boundValue(key).increment(delta);
     }
@@ -699,6 +705,14 @@ public class BoundUtil {
         return boundHash(key).increment(value, delta);
     }
 
+    /**
+     * Hash字段浮点数增量操作（HINCRBYFLOAT）
+     * 建议：对于金额、价格等需要精确计算的场景，使用整数存储法，将浮点数乘以倍数（如100、1000）转为整数存储
+     */
+    public <T> Double hIncrByFloat(String key, T field, double delta) {
+        return boundHash(key).increment(field, delta);
+    }
+
     @SafeVarargs
     public final <K> Long hDel(String key, K... fields) {
         return boundHash(key).delete(fields);
@@ -779,4 +793,59 @@ public class BoundUtil {
         return get(key, Double.class);
     }
 
+    /* ========== 浮点数精度工具方法 ========== */
+
+    /**
+     * 使用整数存储法进行浮点数增量（推荐用于金融场景）
+     * 原理：将浮点数乘以倍数转为整数存储，避免浮点数精度误差
+     * 例如：金额 12.34 元，乘以 100 转为 1234 分存储
+     */
+    public Double incrByFloatAsInteger(String key, double delta, int scale) {
+        if (scale <= 0) {
+            throw new IllegalArgumentException("Scale must be greater than 0");
+        }
+        // 将浮点数转为整数（乘以倍数）
+        long integerDelta = Math.round(delta * scale);
+        // 使用整数增量命令
+        Long result = incrBy(key, integerDelta);
+        // 返回原始单位（除以倍数）
+        return result != null ? result.doubleValue() / scale : null;
+    }
+
+    /**
+     * 使用整数存储法进行 Hash 字段浮点数增量（推荐用于金融场景）
+     */
+    public <T> Double hIncrByFloatAsInteger(String key, T field, double delta, int scale) {
+        if (scale <= 0) {
+            throw new IllegalArgumentException("Scale must be greater than 0");
+        }
+        // 将浮点数转为整数（乘以倍数）
+        long integerDelta = Math.round(delta * scale);
+        // 使用整数增量命令
+        Long result = hIncrBy(key, field, integerDelta);
+        // 返回原始单位（除以倍数）
+        return result != null ? result.doubleValue() / scale : null;
+    }
+
+    /**
+     * 获取使用整数存储法的浮点数值
+     */
+    public Double getFloatAsInteger(String key, int scale) {
+        if (scale <= 0) {
+            throw new IllegalArgumentException("Scale must be greater than 0");
+        }
+        Long integerValue = get(key, Long.class);
+        return integerValue != null ? integerValue.doubleValue() / scale : null;
+    }
+
+    /**
+     * 获取 Hash 字段使用整数存储法的浮点数值
+     */
+    public <T> Double hGetFloatAsInteger(String key, T field, int scale) {
+        if (scale <= 0) {
+            throw new IllegalArgumentException("Scale must be greater than 0");
+        }
+        Long integerValue = hGet(key, field, Long.class);
+        return integerValue != null ? integerValue.doubleValue() / scale : null;
+    }
 }

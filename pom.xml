@@ -11,7 +11,7 @@
     <packaging>jar</packaging>
 
     <name>RedisExplore</name>
-    <url>http://maven.apache.org</url>
+    <description>Redis缓存探索项目</description>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -44,12 +44,6 @@
     </dependencyManagement>
 
     <dependencies>
-        <dependency>
-            <groupId>junit</groupId>
-            <artifactId>junit</artifactId>
-            <version>3.8.1</version>
-            <scope>test</scope>
-        </dependency>
 
         <!-- Spring Boot Starters -->
         <dependency>
@@ -148,7 +142,7 @@
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <version>${spring-boot.version}</version>
                 <configuration>
-                    <mainClass>com.wait.RedisExplore.Application</mainClass>
+                    <mainClass>com.wait.App</mainClass>
                 </configuration>
                 <executions>
                     <execution>

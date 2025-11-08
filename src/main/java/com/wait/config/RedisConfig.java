@@ -36,9 +36,10 @@ public class RedisConfig {
          * */
         Jackson2JsonRedisSerializer<Object> serializer = new Jackson2JsonRedisSerializer<>(Object.class);
         ObjectMapper objectMapper = new ObjectMapper();
+        // 序列化所有字段
         objectMapper.setVisibility(PropertyAccessor.ALL, JsonAutoDetect.Visibility.ANY);
-        // 新版推荐使用activateDefaultTyping，并指定验证器
-        objectMapper.activateDefaultTyping(LaissezFaireSubTypeValidator.instance, ObjectMapper.DefaultTyping.NON_FINAL);
+        // 完全禁用类型信息，减少存储空间，防止反序列化漏洞，兼容性好
+        objectMapper.deactivateDefaultTyping();
 
         // 注册JSR310模块, 支持LocalDateTime序列化
         objectMapper.registerModule(new JavaTimeModule());

@@ -22,8 +22,9 @@ public class ThirdMQServiceImpl implements MQService {
     @Override
     public void start() {
         // 初始化第三方MQ客户端
+        // TODO: 实现第三方MQ客户端的实际初始化逻辑
+        // 示例：thirdMqClient = new ThirdMqClient(mqEndpoint);
         try {
-            // thirdMqClient = new ThirdMqClient(mqEndpoint);
             initialized = true;
             log.info("ThirdMQ服务初始化成功, endpoint: {}", mqEndpoint);
         } catch (Exception e) {
@@ -34,8 +35,8 @@ public class ThirdMQServiceImpl implements MQService {
 
     @Override
     public void shutdown() {
-        // 关闭第三方MQ客户端
-        // if (thirdMqClient != null) { thirdMqClient.close(); }
+        // TODO: 实现第三方MQ客户端的关闭逻辑
+        // 示例：if (thirdMqClient != null) { thirdMqClient.close(); }
         initialized = false;
         log.info("ThirdMQ服务已关闭");
     }
@@ -48,12 +49,12 @@ public class ThirdMQServiceImpl implements MQService {
         }
 
         try {
-            // 第三方MQ的实际发送逻辑
-            // thirdMqClient.send(topic, key, message, timeoutMs);
+            // TODO: 实现第三方MQ的实际发送逻辑
+            // 示例：thirdMqClient.send(topic, key, message, timeoutMs);
             log.info("ThirdMQ: 消息发送成功, topic: {}, key: {}", topic, key);
         } catch (Exception e) {
             log.error("ThirdMQ: 消息发送失败, topic: {}, key: {}", topic, key, e);
-            // 可以添加重试逻辑或降级到内存MQ
+            // TODO: 可以添加重试逻辑或降级到内存MQ
         }
     }
 
@@ -65,8 +66,8 @@ public class ThirdMQServiceImpl implements MQService {
         }
 
         try {
-            // 发送到死信队列
-            // thirdMqClient.send(DL_TOPIC, key, message, timeoutMs);
+            // TODO: 实现死信队列的实际发送逻辑
+            // 示例：thirdMqClient.send(DL_TOPIC, key, message, timeoutMs);
             log.info("ThirdMQ: 死信消息发送成功, key: {}", key);
         } catch (Exception e) {
             log.error("ThirdMQ: 死信消息发送失败, key: {}", key, e);

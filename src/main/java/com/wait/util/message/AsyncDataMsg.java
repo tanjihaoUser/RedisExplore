@@ -8,7 +8,9 @@ import lombok.NoArgsConstructor;
 import java.io.Serializable;
 
 /**
- * 增强的写回任务实体，支持存储数据库操作
+ * 异步数据消息 - 用于写回策略中的异步数据库操作
+ * 支持保存(SAVE)和删除(DELETE)操作，包含重试机制
+ * @param <T> 业务数据类型
  */
 @Data
 @NoArgsConstructor

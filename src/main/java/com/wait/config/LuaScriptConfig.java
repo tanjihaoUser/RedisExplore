@@ -47,15 +47,4 @@ public class LuaScriptConfig {
         log.info("map: {}", luaScriptMap);
         return luaScriptMap;
     }
-
-    /**
-     * 读取单个脚本，并注入实例对象
-     * */
-//    @Bean("slideWindowScript")
-//    public DefaultRedisScript<Long> slideWindowScript() {
-//        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
-//        script.setLocation(new ClassPathResource("lua/slide_window.lua"));
-//        script.setResultType(Long.class);
-//        return script;
-//    }
 }

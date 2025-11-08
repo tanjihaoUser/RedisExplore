@@ -35,6 +35,7 @@ public class UserSession implements Serializable {
     private String language;     // 语言偏好
 
     // 临时扩展属性（不持久化到Redis）
+    @Builder.Default
     private transient Map<String, Object> attributes = new HashMap<>();
 
     public UserSession(String id, String userId, String username) {

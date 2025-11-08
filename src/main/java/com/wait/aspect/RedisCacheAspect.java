@@ -7,24 +7,22 @@ import com.wait.sync.CacheStrategyFactory;
 import com.wait.sync.read.ReadStrategy;
 import com.wait.sync.write.WriteStrategy;
 import com.wait.util.SpelExpressionParserUtil;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Aspect
 @Component
 @Slf4j
+@RequiredArgsConstructor
 public class RedisCacheAspect {
 
-    @Autowired
-    private SpelExpressionParserUtil spelExpressionParserUtil;
-
-    @Autowired
-    private CacheStrategyFactory cacheStrategyFactory;
+    private final SpelExpressionParserUtil spelExpressionParserUtil;
+    private final CacheStrategyFactory cacheStrategyFactory;
 
     @Around("@annotation(redisCache)")
     public Object handleCache(ProceedingJoinPoint joinPoint, RedisCache redisCache) throws Throwable {
@@ -41,12 +39,10 @@ public class RedisCacheAspect {
                 WriteStrategy writeStrategy = cacheStrategyFactory.getWriteStrategy(redisCache.writeStrategy());
                 // 对于写回策略（INCREMENTAL_WRITE_BEHIND 和 SNAPSHOT_WRITE_BEHIND），不立即执行数据库操作
                 // 只更新Redis和缓冲任务，由定时任务统一批量写入数据库
+                // 由于未执行实际方法，需要返回合适的默认值，避免返回null导致原始方法签名不匹配
                 if (redisCache.writeStrategy() == WriteStrategyType.INCREMENTAL_WRITE_BEHIND ||
                     redisCache.writeStrategy() == WriteStrategyType.SNAPSHOT_WRITE_BEHIND) {
-                    // 只调用写策略进行Redis更新和后续缓冲，不执行数据库操作
-                    // 由定时任务统一执行数据库写入
                     writeStrategy.write(cacheSyncParam, joinPoint);
-                    // 由于未执行实际方法，需要返回合适的默认值，避免返回null导致原始方法签名不匹配
                     return getDefaultReturnValue(joinPoint);
                 } else {
                     // 其他写策略：策略类内部会执行数据库操作
@@ -65,8 +61,7 @@ public class RedisCacheAspect {
     }
 
     /**
-     * 获取方法的默认返回值
-     * 对于写回策略（INCREMENTAL_WRITE_BEHIND、SNAPSHOT_WRITE_BEHIND），由于不立即执行数据库操作，需要返回合适的默认值
+     * 获取方法的默认返回值，对于定时写回策略，由于不立即执行数据库操作，需要返回合适的默认值
      * 避免返回null导致原始方法签名不匹配（特别是对于原始返回类型如 int）
      */
     private Object getDefaultReturnValue(ProceedingJoinPoint joinPoint) {

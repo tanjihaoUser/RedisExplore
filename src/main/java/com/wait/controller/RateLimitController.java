@@ -11,6 +11,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.concurrent.TimeUnit;
 
+/**
+ * 使用Redis中的String类型做限流
+ * */
 @RestController
 @RequestMapping("/redis")
 public class RateLimitController {

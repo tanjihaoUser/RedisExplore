@@ -5,9 +5,12 @@ import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
+import com.wait.config.script.RateLimitScripts;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 
-import com.wait.config.LuaScriptConfig;
+import com.wait.config.script.LuaScriptConfig;
 import com.wait.util.BoundUtil;
 
 import lombok.extern.slf4j.Slf4j;
@@ -20,10 +23,13 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class SlideWindow extends RateLimiter {
 
-    private static final AtomicLong COUNTER = new AtomicLong(0); // 静态计数器
+    private final AtomicLong COUNTER = new AtomicLong(0); // 静态计数器
 
-    public SlideWindow(BoundUtil boundUtil) {
+    private final DefaultRedisScript<Long> slideWindowScript;
+
+    public SlideWindow(BoundUtil boundUtil, @Qualifier(RateLimitScripts.SLIDE_WINDOW) DefaultRedisScript<Long> slideWindowScript) {
         super(boundUtil);
+        this.slideWindowScript = slideWindowScript;
     }
 
     @Override
@@ -33,8 +39,8 @@ public class SlideWindow extends RateLimiter {
         long windowMillis = unit.toMillis(windowSize);
         String id = generateUniqueMember();
 
-        Long spare = boundUtil.executeScriptByMap(
-                LuaScriptConfig.SLIDE_WINDOW,
+        Long spare = boundUtil.executeSpecificScript(
+                slideWindowScript,
                 Arrays.asList(rateKey),
                 limit, windowMillis, current, id);
 

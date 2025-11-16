@@ -144,12 +144,12 @@ public class BoundUtil {
      */
     private boolean isRetryableException(Exception e) {
         // 可重试异常：通常是暂时的、网络相关的、可自我恢复的
-        return e instanceof DataAccessResourceFailureException  // 连接断开（Spring异常）
-                || e instanceof RedisSystemException           // 系统级错误（Spring异常）
-                || e instanceof QueryTimeoutException          // 查询超时（Spring异常）
-                || e instanceof SocketTimeoutException         // Socket超时（Java标准异常）
+        return e instanceof DataAccessResourceFailureException // 连接断开（Spring异常）
+                || e instanceof RedisSystemException // 系统级错误（Spring异常）
+                || e instanceof QueryTimeoutException // 查询超时（Spring异常）
+                || e instanceof SocketTimeoutException // Socket超时（Java标准异常）
                 || (e instanceof InvalidDataAccessApiUsageException &&
-                !isBusinessLogicError((InvalidDataAccessApiUsageException) e)); // 非业务逻辑的API使用错误
+                        !isBusinessLogicError((InvalidDataAccessApiUsageException) e)); // 非业务逻辑的API使用错误
     }
 
     /**
@@ -161,10 +161,10 @@ public class BoundUtil {
         String causeMsg = cause != null ? cause.getMessage().toLowerCase() : "";
 
         // 不可重试异常：通常是永久的、代码逻辑错误，重试无意义
-        return msg.contains("wrong number of arguments")    // 命令参数错误
-                || msg.contains("unknown command")          // 未知命令
-                || msg.contains("syntax error")             // 语法错误
-                || msg.contains("wrongtype")                // 类型操作错误（如对字符串执行HASH操作）
+        return msg.contains("wrong number of arguments") // 命令参数错误
+                || msg.contains("unknown command") // 未知命令
+                || msg.contains("syntax error") // 语法错误
+                || msg.contains("wrongtype") // 类型操作错误（如对字符串执行HASH操作）
                 || causeMsg.contains("wrong number of arguments")
                 || causeMsg.contains("unknown command")
                 || causeMsg.contains("syntax error")
@@ -321,7 +321,8 @@ public class BoundUtil {
      * 判断是否为空值标记
      */
     private boolean isNullMarker(Object value) {
-        if (value == null) return false;
+        if (value == null)
+            return false;
 
         if (value instanceof String) {
             return "NULL".equals(value);
@@ -444,7 +445,8 @@ public class BoundUtil {
 
     public <T> List<T> mGet(List<String> keys, Class<T> clazz) {
         List<Object> res = redisTemplate.opsForValue().multiGet(keys);
-        if (res == null) return Collections.emptyList();
+        if (res == null)
+            return Collections.emptyList();
 
         List<T> result = new ArrayList<>();
         for (int i = 0; i < res.size(); i++) {
@@ -489,6 +491,64 @@ public class BoundUtil {
         return boundValue(key).increment(delta);
     }
 
+    /**
+     * 追加字符串（APPEND）
+     * 
+     * @param key   键
+     * @param value 要追加的内容
+     * @return 追加后字符串的总长度
+     */
+    public Long append(String key, String value) {
+        Integer len = boundValue(key).append(value);
+        return len != null ? len.longValue() : null;
+    }
+
+    /**
+     * 获取字符串子串（GETRANGE）
+     * 
+     * @param key   键
+     * @param start 起始偏移量（包含，支持负数）
+     * @param end   结束偏移量（包含，支持负数）
+     * @return 指定范围的子串，不存在返回null
+     */
+    public String getRange(String key, long start, long end) {
+        return boundValue(key).get(start, end);
+    }
+
+    /**
+     * 设置字符串指定偏移量的内容（SETRANGE）
+     * 
+     * @param key    键
+     * @param offset 偏移量（从0开始）
+     * @param value  要设置的内容
+     */
+    public void setRange(String key, long offset, String value) {
+        boundValue(key).set(value, offset);
+    }
+
+    /**
+     * 获取字符串长度（STRLEN）
+     * 
+     * @param key 键
+     * @return 字符串长度，不存在返回0
+     */
+    public Long strLen(String key) {
+        return boundValue(key).size();
+    }
+
+    /**
+     * GETSET：设置新值并返回旧值
+     * 
+     * @param key   键
+     * @param value 新值
+     * @param clazz 旧值类型
+     * @return 旧值，不存在返回null
+     */
+    public <T> T getSet(String key, T value, Class<T> clazz) {
+        Object old = boundValue(key).getAndSet(value);
+        return old != null ? safeCast(old, clazz) : null;
+    }
+
     /* ========== List（BoundListOperations） ========== */
     private BoundListOperations<String, Object> boundList(String key) {
         return redisTemplate.boundListOps(key);
@@ -514,14 +574,10 @@ public class BoundUtil {
         return value != null ? safeCast(value, clazz) : null;
     }
 
-    public <T> T blockLeftPop(String key, long timeout, TimeUnit unit, Class<T> clazz) {
-        Object value = boundList(key).leftPop(timeout, unit);
-        return value != null ? safeCast(value, clazz) : null;
-    }
-
     public <T> List<T> range(String key, long start, long end, Class<T> clazz) {
         List<Object> values = boundList(key).range(start, end);
-        if (values == null) return Collections.emptyList();
+        if (values == null)
+            return Collections.emptyList();
 
         List<T> result = new ArrayList<>();
         for (Object value : values) {
@@ -536,6 +592,134 @@ public class BoundUtil {
 
     public void trim(String key, long start, long end) {
         boundList(key).trim(start, end);
+    }
+
+    /**
+     * 从列表中移除指定值的元素（LREM命令）
+     * 
+     * @param key   列表key
+     * @param value 要移除的值
+     * @param count 移除数量：
+     *              count > 0: 从表头开始，移除count个值为value的元素
+     *              count < 0: 从表尾开始，移除count个值为value的元素
+     *              count = 0: 移除所有值为value的元素
+     * @return 被移除元素的数量
+     */
+    public <T> Long listRemove(String key, T value, long count) {
+        return boundList(key).remove(count, value);
+    }
+
+    /**
+     * 从列表中移除所有指定值的元素（LREM命令，count=0）
+     * 
+     * @param key   列表key
+     * @param value 要移除的值
+     * @return 被移除元素的数量
+     */
+    public <T> Long listRemoveAll(String key, T value) {
+        return listRemove(key, value, 0);
+    }
+
+    /**
+     * 获取列表中指定索引位置的元素（LINDEX命令）
+     * 
+     * @param key   列表key
+     * @param index 索引位置（0-based，支持负数，-1表示最后一个元素）
+     * @param clazz 返回类型
+     * @return 指定位置的元素，如果索引超出范围返回null
+     */
+    public <T> T listIndex(String key, long index, Class<T> clazz) {
+        Object value = boundList(key).index(index);
+        return value != null ? safeCast(value, clazz) : null;
+    }
+
+    /**
+     * 设置列表中指定索引位置的元素（LSET命令）
+     * 
+     * @param key   列表key
+     * @param index 索引位置（0-based）
+     * @param value 要设置的值
+     */
+    public <T> void listSet(String key, long index, T value) {
+        boundList(key).set(index, value);
+    }
+
+    /**
+     * 在列表中指定元素的前面或后面插入新元素（LINSERT命令）
+     * 
+     * @param key    列表key
+     * @param pivot  参考元素（在哪个元素前后插入）
+     * @param value  要插入的值
+     * @param before true表示在pivot前面插入，false表示在pivot后面插入
+     * @return 插入后列表的长度，如果pivot不存在返回-1
+     */
+    public <T> Long listInsert(String key, T pivot, T value, boolean before) {
+        if (before) {
+            return boundList(key).leftPush(pivot, value);
+        } else {
+            return boundList(key).rightPush(pivot, value);
+        }
+    }
+
+    /**
+     * 阻塞式从列表左侧弹出元素（BLPOP命令）
+     * 如果列表为空，会阻塞等待直到有元素可用或超时
+     * 
+     * @param key     列表key
+     * @param timeout 超时时间
+     * @param unit    时间单位
+     * @param clazz   返回类型
+     * @return 弹出的元素，如果超时返回null
+     */
+    public <T> T blockLeftPop(String key, long timeout, TimeUnit unit, Class<T> clazz) {
+        Object value = boundList(key).leftPop(timeout, unit);
+        return value != null ? safeCast(value, clazz) : null;
+    }
+
+    /**
+     * 阻塞式从列表右侧弹出元素（BRPOP命令）
+     * 如果列表为空，会阻塞等待直到有元素可用或超时
+     * 
+     * @param key     列表key
+     * @param timeout 超时时间
+     * @param unit    时间单位
+     * @param clazz   返回类型
+     * @return 弹出的元素，如果超时返回null
+     */
+    public <T> T blockRightPop(String key, long timeout, TimeUnit unit, Class<T> clazz) {
+        Object value = boundList(key).rightPop(timeout, unit);
+        return value != null ? safeCast(value, clazz) : null;
+    }
+
+    /**
+     * 从源列表右侧弹出元素，并推入目标列表左侧（RPOPLPUSH命令）
+     * 原子性操作，适用于消息队列、任务队列等场景
+     * 
+     * @param sourceKey 源列表key
+     * @param destKey   目标列表key
+     * @param clazz     返回类型
+     * @return 被移动的元素，如果源列表为空返回null
+     */
+    public <T> T rightPopAndLeftPush(String sourceKey, String destKey, Class<T> clazz) {
+        Object value = redisTemplate.opsForList().rightPopAndLeftPush(sourceKey, destKey);
+        return value != null ? safeCast(value, clazz) : null;
+    }
+
+    /**
+     * 阻塞式从源列表右侧弹出元素，并推入目标列表左侧（BRPOPLPUSH命令）
+     * 如果源列表为空，会阻塞等待直到有元素可用或超时
+     * 
+     * @param sourceKey 源列表key
+     * @param destKey   目标列表key
+     * @param timeout   超时时间
+     * @param unit      时间单位
+     * @param clazz     返回类型
+     * @return 被移动的元素，如果超时返回null
+     */
+    public <T> T blockRightPopAndLeftPush(String sourceKey, String destKey, long timeout, TimeUnit unit,
+            Class<T> clazz) {
+        Object value = redisTemplate.opsForList().rightPopAndLeftPush(sourceKey, destKey, timeout, unit);
+        return value != null ? safeCast(value, clazz) : null;
     }
 
     /* ========== Set（BoundSetOperations） ========== */
@@ -554,7 +738,8 @@ public class BoundUtil {
 
     public <T> Set<T> sMembers(String key, Class<T> clazz) {
         Set<Object> members = boundSet(key).members();
-        if (members == null) return Collections.emptySet();
+        if (members == null)
+            return Collections.emptySet();
 
         Set<T> result = Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
         for (Object member : members) {
@@ -592,7 +777,8 @@ public class BoundUtil {
 
     public <T> Set<T> zRange(String key, long start, long end, Class<T> clazz) {
         Set<Object> values = boundZSet(key).range(start, end);
-        if (values == null) return Collections.emptySet();
+        if (values == null)
+            return Collections.emptySet();
 
         Set<T> result = Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
         for (Object value : values) {
@@ -603,7 +789,8 @@ public class BoundUtil {
 
     public <T> Set<T> zReverseRange(String key, long start, long end, Class<T> clazz) {
         Set<Object> values = boundZSet(key).reverseRange(start, end);
-        if (values == null) return Collections.emptySet();
+        if (values == null)
+            return Collections.emptySet();
 
         Set<T> result = Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
         for (Object value : values) {
@@ -699,6 +886,51 @@ public class BoundUtil {
 
         // 映射为对象
         return hashMappingUtil.mapToObject(stringKeyMap, clazz);
+    }
+
+    /**
+     * 获取 Hash 的所有字段名（HKEYS）
+     */
+    public Set<String> hKeys(String key) {
+        Set<Object> keys = boundHash(key).keys();
+        if (keys == null || keys.isEmpty()) {
+            return Collections.emptySet();
+        }
+        Set<String> result = Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
+        for (Object k : keys) {
+            result.add(String.valueOf(k));
+        }
+        return result;
+    }
+
+    /**
+     * 获取 Hash 的所有字段值（HVALS）
+     */
+    public <V> List<V> hVals(String key, Class<V> clazz) {
+        List<Object> values = boundHash(key).values();
+        if (values == null || values.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<V> result = new ArrayList<>(values.size());
+        for (Object value : values) {
+            result.add(safeCast(value, clazz));
+        }
+        return result;
+    }
+
+    /**
+     * 获取 Hash 的所有字段与值（HGETALL，返回Map）
+     */
+    public <V> Map<String, V> hEntries(String key, Class<V> clazz) {
+        Map<Object, Object> map = boundHash(key).entries();
+        if (map == null || map.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<String, V> result = new HashMap<>();
+        for (Map.Entry<Object, Object> entry : map.entrySet()) {
+            result.put(String.valueOf(entry.getKey()), safeCast(entry.getValue(), clazz));
+        }
+        return result;
     }
 
     public <T> Long hIncrBy(String key, T value, long delta) {

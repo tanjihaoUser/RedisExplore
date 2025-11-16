@@ -12,6 +12,9 @@ import org.springframework.web.bind.annotation.*;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * 使用Redis中的hash存储session信息
+ * */
 @Slf4j
 @RestController
 @RequestMapping("/sessions")

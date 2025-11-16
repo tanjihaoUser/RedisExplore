@@ -24,7 +24,7 @@ public @interface RedisCache {
     /** 缓存前缀 */
     String prefix() default "";
 
-    /** 缓存key */
+    /** 缓存key，解析的时候会加上默认后缀:，这里不需要显示指定 */
     String key();
 
     /** 缓存过期时间 */

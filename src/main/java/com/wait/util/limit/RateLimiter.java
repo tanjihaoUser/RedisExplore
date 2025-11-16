@@ -21,7 +21,7 @@ public abstract class RateLimiter {
 
     public static final String LIMIT_STR = "limit:";
 
-    public static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS Z");
+    public static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     /**
      * 简要写法，存在一些问题

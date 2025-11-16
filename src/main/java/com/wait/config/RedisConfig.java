@@ -1,12 +1,5 @@
 package com.wait.config;
 
-import com.fasterxml.jackson.annotation.JsonAutoDetect;
-import com.fasterxml.jackson.annotation.PropertyAccessor;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
@@ -14,6 +7,13 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.serializer.Jackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
+
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
+import com.fasterxml.jackson.annotation.PropertyAccessor;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 @Configuration
 public class RedisConfig {
@@ -29,11 +29,11 @@ public class RedisConfig {
 
         /*
          * value 任意对象序列化成JSON存储，系统默认配置的JdkSerializationRedisSerializer存在一些缺点
-         *  可读性差: 存入Redis的是二进制乱码。
-            跨语言不兼容: 只有Java能识别。
-            安全风险: 存在反序列化漏洞。
-            体积大。
-         * */
+         * 可读性差: 存入Redis的是二进制乱码。
+         * 跨语言不兼容: 只有Java能识别。
+         * 安全风险: 存在反序列化漏洞。
+         * 体积大。
+         */
         Jackson2JsonRedisSerializer<Object> serializer = new Jackson2JsonRedisSerializer<>(Object.class);
         ObjectMapper objectMapper = new ObjectMapper();
         // 序列化所有字段
@@ -60,5 +60,25 @@ public class RedisConfig {
     @Bean
     public StringRedisTemplate stringRedisTemplate(RedisConnectionFactory factory) {
         return new StringRedisTemplate(factory);
+    }
+
+    /**
+     * 暴露 ObjectMapper Bean，用于手动序列化对象为 JSON 字符串
+     * 在 Lua 脚本场景中，需要手动序列化对象后传入，避免 RedisTemplate 自动序列化导致的多重转义
+     */
+    @Bean
+    public ObjectMapper redisObjectMapper() {
+        ObjectMapper objectMapper = new ObjectMapper();
+        // 序列化所有字段
+        objectMapper.setVisibility(PropertyAccessor.ALL, JsonAutoDetect.Visibility.ANY);
+        // 完全禁用类型信息，减少存储空间，防止反序列化漏洞，兼容性好
+        objectMapper.deactivateDefaultTyping();
+        // 注册JSR310模块, 支持LocalDateTime序列化
+        objectMapper.registerModule(new JavaTimeModule());
+        // 禁用日期转换为时间戳
+        objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        // 忽略未知属性
+        objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        return objectMapper;
     }
 }

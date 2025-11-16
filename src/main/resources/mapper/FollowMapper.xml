@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.wait.mapper.FollowMapper">
+
+    <insert id="insert">
+        INSERT INTO user_follow (follower_id, followed_id)
+        VALUES (#{followerId}, #{followedId})
+    </insert>
+
+    <delete id="delete">
+        DELETE FROM user_follow WHERE follower_id = #{followerId} AND followed_id = #{followedId}
+    </delete>
+
+    <select id="selectFollowedIds" resultType="long">
+        SELECT followed_id FROM user_follow WHERE follower_id = #{followerId}
+    </select>
+
+    <select id="exists" resultType="boolean">
+        SELECT COUNT(*) > 0 FROM user_follow
+        WHERE follower_id = #{followerId} AND followed_id = #{followedId}
+    </select>
+
+    <select id="countFollowers" resultType="int">
+        SELECT COUNT(*) FROM user_follow WHERE followed_id = #{followedId}
+    </select>
+
+    <select id="countFollowing" resultType="int">
+        SELECT COUNT(*) FROM user_follow WHERE follower_id = #{followerId}
+    </select>
+
+</mapper>

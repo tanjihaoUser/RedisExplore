@@ -4,9 +4,12 @@ import java.time.ZonedDateTime;
 import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
 
+import com.wait.config.script.RateLimitScripts;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 
-import com.wait.config.LuaScriptConfig;
+import com.wait.config.script.LuaScriptConfig;
 import com.wait.util.BoundUtil;
 
 import lombok.extern.slf4j.Slf4j;
@@ -21,8 +24,11 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class TokenBucket extends RateLimiter {
 
-    public TokenBucket(BoundUtil boundUtil) {
+    private final DefaultRedisScript<Long> tokenBucketScript;
+
+    public TokenBucket(BoundUtil boundUtil, @Qualifier(RateLimitScripts.TOKEN_BUCKET) DefaultRedisScript<Long> tokenBucketScript) {
         super(boundUtil);
+        this.tokenBucketScript = tokenBucketScript;
     }
 
     @Override
@@ -37,8 +43,8 @@ public class TokenBucket extends RateLimiter {
 
         long burst = limit; // 桶容量等于限制数
 
-        Long allowed = boundUtil.executeScriptByMap(
-                LuaScriptConfig.TOKEN_BUCKET, // 使用修复后的脚本
+        Long allowed = boundUtil.executeSpecificScript(
+                tokenBucketScript,
                 Arrays.asList(rateKey),
                 rate, burst, current);
 

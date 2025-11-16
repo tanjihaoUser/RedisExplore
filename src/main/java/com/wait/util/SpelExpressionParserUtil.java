@@ -202,7 +202,7 @@ public class SpelExpressionParserUtil {
     public String generateCacheKey(ProceedingJoinPoint joinPoint, String keyExpression, String prefix) {
         if (keyExpression == null || keyExpression.trim().isEmpty()) {
             MethodSignature signature = (MethodSignature) joinPoint.getSignature();
-            return String.format("%s::%s::%s",
+            return String.format("%s:%s:%s",
                     prefix,
                     signature.getMethod().getName(),
                     Arrays.hashCode(joinPoint.getArgs()));

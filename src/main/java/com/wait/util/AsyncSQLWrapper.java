@@ -7,8 +7,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
 
-import org.aspectj.lang.ProceedingJoinPoint;
-import org.aspectj.lang.reflect.MethodSignature;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DataAccessException;
 import org.springframework.retry.RetryContext;
@@ -19,6 +17,7 @@ import org.springframework.stereotype.Component;
 
 import com.wait.entity.CacheSyncParam;
 import com.wait.service.MQService;
+import com.wait.sync.MethodExecutor;
 import com.wait.util.message.CompensationMsg;
 
 import lombok.RequiredArgsConstructor;
@@ -29,9 +28,6 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class AsyncSQLWrapper {
 
-    // 一个特殊的标记对象，用于标识void方法成功执行，但无需设置结果。使用一个静态实例避免创建过多对象。
-    private static final VoidOperationResult VOID_OPERATION_RESULT = new VoidOperationResult();
-
     @Qualifier("thirdMQService")
     private final MQService mqService;
 
@@ -39,119 +35,50 @@ public class AsyncSQLWrapper {
     private final ExecutorService executor;
 
     /**
-     * 执行切面方法 - 统一入口使用一个内部包装方法，统一将Runnable和void方法转换为Callable。
+     * 执行切面方法 - 用于策略类调用
+     * 根据param中的isExecuteASync标志决定同步或异步执行
+     * 
+     * @param param          缓存参数
+     * @param methodExecutor 方法执行器
      */
-    public <T> void executeAspectMethod(CacheSyncParam<T> param, ProceedingJoinPoint joinPoint) {
-        // 1. 判断方法类型
-        boolean isVoidMethod = isVoidMethod(joinPoint);
+    public <T> void executeAspectMethod(CacheSyncParam<T> param, MethodExecutor methodExecutor) {
+        boolean isVoidMethod = methodExecutor.isVoidMethod();
 
-        // 2. 创建统一的Callable操作
-        Callable<Object> unifiedOperation = createUnifiedCallable(joinPoint, isVoidMethod);
-
-        // 3. 记录是否需要设置结果
-        boolean shouldSetResult = !isVoidMethod;
-
-        // 4. 执行统一的操作
-        executeUnifiedOperation(param, unifiedOperation, shouldSetResult);
-    }
-
-    /**
-     * 创建统一的Callable，封装了原始方法的执行。对于void方法，返回一个标记值；对于有返回值的方法，返回实际结果。
-     */
-    private Callable<Object> createUnifiedCallable(ProceedingJoinPoint joinPoint, boolean isVoidMethod) {
-        return () -> {
+        // 创建Callable操作
+        Callable<T> operation = () -> {
             try {
-                Object result = joinPoint.proceed();
-                if (isVoidMethod) {
-                    log.debug("Void method executed successfully, returning marker object.");
-                    // 返回标记对象，表示void方法成功执行
-                    return VOID_OPERATION_RESULT;
-                } else {
-                    log.debug("Method with return value executed, result type: {}",
-                            result != null ? result.getClass().getSimpleName() : "null");
-                    return result;
-                }
+                Object result = methodExecutor.execute();
+                @SuppressWarnings("unchecked")
+                T typedResult = isVoidMethod ? null : (T) result;
+                return typedResult;
             } catch (Throwable e) {
-                throw new RuntimeException("JoinPoint execution failed", e);
+                throw new RuntimeException("Method execution failed", e);
             }
         };
-    }
 
-    /**
-     * 统一的操作执行核心方法
-     * 
-     * @param param           缓存参数
-     * @param operation       统一的操作（总是Callable）
-     * @param shouldSetResult 标志位，指示是否将操作结果设置到param中
-     */
-    @SuppressWarnings("unchecked")
-    private <T> void executeUnifiedOperation(CacheSyncParam<T> param, Callable<Object> operation,
-            boolean shouldSetResult) {
-        // 将统一的Callable<Object>适配为Callable<T>，但实际执行逻辑由内部的lambda控制。
-        // 我们通过shouldSetResult来决定是否设置结果。
-        Callable<T> adaptedOperation = () -> {
-            Object result = operation.call();
-            // 如果本次操作是void方法，返回null给adaptedOperation，且外部根据shouldSetResult=false不会设置它。
-            // 如果本次操作有返回值，则返回实际结果，外部会设置它。
-            return (T) (result instanceof VoidOperationResult ? null : result);
-        };
-
+        // 根据配置决定同步或异步执行
         if (Boolean.TRUE.equals(param.getIsExecuteASync())) {
-            executeAsync(param, adaptedOperation, shouldSetResult);
-        } else {
-            executeSync(param, adaptedOperation, shouldSetResult);
-        }
-    }
-
-    /**
-     * 异步执行（统一逻辑）
-     */
-    private <T> void executeAsync(CacheSyncParam<T> param, Callable<T> operation, boolean shouldSetResult) {
-        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-            try {
-                T result = executeWithRetry(operation, param.getKey());
-                // 根据标志位决定是否设置结果
-                if (shouldSetResult) {
+            // 异步执行
+            CompletableFuture<T> future = executeAsync(operation);
+            future.thenAccept(result -> {
+                if (!isVoidMethod && result != null) {
                     param.setNewValue(result);
                     log.debug("Async operation completed, result set for key: {}", param.getKey());
-                } else {
-                    log.debug("Async void operation completed for key: {}", param.getKey());
-                    // 对于void操作，result为null，且我们不设置它，或者可以明确设置为null
-                    // param.setResult(null); // 可选，保持param的洁净
                 }
-            } catch (Exception e) {
-                log.error("Async operation failed: {}, send compensation message", param.getKey(), e);
-                sendToCompensationQueue(param, e);
-                throw new RuntimeException(e);
-            }
-        }, executor);
-
-        future.whenComplete((result, throwable) -> {
-            if (throwable != null) {
-                log.error("Async task completed with exception for key: {}", param.getKey(), throwable);
-            } else {
-                log.debug("Async task completed successfully for key: {}", param.getKey());
-            }
-        });
-    }
-
-    /**
-     * 同步执行（统一逻辑）
-     */
-    private <T> void executeSync(CacheSyncParam<T> param, Callable<T> operation, boolean shouldSetResult) {
-        try {
-            T result = executeWithRetry(operation, param.getKey());
-            // 根据标志位决定是否设置结果
-            if (shouldSetResult) {
+            }).exceptionally(ex -> {
+                log.error("Async operation failed: {}, send compensation message", param.getKey(), ex);
+                Exception exception = ex instanceof Exception ? (Exception) ex
+                        : new RuntimeException("Async operation failed", ex);
+                sendToCompensationQueue(param, exception);
+                return null;
+            });
+        } else {
+            // 同步执行
+            T result = executeSync(operation);
+            if (!isVoidMethod && result != null) {
                 param.setNewValue(result);
                 log.debug("Sync operation completed, result set for key: {}", param.getKey());
-            } else {
-                log.debug("Sync void operation completed for key: {}", param.getKey());
-                // param.setNewValue(null); // 可选
             }
-        } catch (Exception e) {
-            log.error("Sync operation failed: {}", param.getKey(), e);
-            throw new RuntimeException("Operation failed after retries", e);
         }
     }
 
@@ -165,14 +92,6 @@ public class AsyncSQLWrapper {
         int retryCount = (context != null ? context.getRetryCount() : 0) + 1;
         log.info("Executing database operation, key: {}, attempt: {}", key, retryCount);
         return operation.call();
-    }
-
-    /**
-     * 判断方法是否是void返回类型
-     */
-    private boolean isVoidMethod(ProceedingJoinPoint joinPoint) {
-        MethodSignature signature = (MethodSignature) joinPoint.getSignature();
-        return signature.getReturnType() == void.class;
     }
 
     /**
@@ -192,29 +111,46 @@ public class AsyncSQLWrapper {
     }
 
     /**
-     * 简化调用 - 统一接口
-     * 对外提供两个方法，但内部共用executeUnifiedOperation。
+     * 同步执行数据库操作（带重试）
      */
-    public <T> void executeSimple(String key, boolean async, Callable<T> operation) {
-        CacheSyncParam<T> param = CacheSyncParam.<T>builder()
-                .key(key)
-                .isExecuteASync(async)
-                .build();
-        // 对于明确提供Callable的调用，总是需要设置结果
-        executeUnifiedOperation(param, (Callable<Object>) operation, true);
+    public <T> T executeSync(Callable<T> operation) {
+        try {
+            return executeWithRetry(operation, "Sync Operation");
+        } catch (Exception e) {
+            log.error("Sync operation failed", e);
+            throw new RuntimeException("Operation failed after retries", e);
+        }
     }
 
-    public void executeSimpleVoid(String key, boolean async, Runnable operation) {
-        CacheSyncParam<Void> param = CacheSyncParam.<Void>builder()
-                .key(key)
-                .isExecuteASync(async)
-                .build();
-        // 将Runnable包装成返回标记值的Callable，并指示不需要设置结果
-        Callable<Object> unifiedOp = () -> {
-            operation.run();
-            return VOID_OPERATION_RESULT;
-        };
-        executeUnifiedOperation(param, unifiedOp, false);
+    /**
+     * 异步执行数据库操作（带重试和异常处理）
+     */
+    public <T> CompletableFuture<T> executeAsync(Callable<T> operation) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                return executeWithRetry(operation, "Async Operation");
+            } catch (Exception e) {
+                log.error("Async operation failed", e);
+                throw new RuntimeException("Async operation failed after retries", e);
+            }
+        }, executor);
+    }
+
+    /**
+     * 异步执行void数据库操作（带重试和异常处理）
+     */
+    public CompletableFuture<Void> executeAsyncVoid(Runnable operation) {
+        return CompletableFuture.runAsync(() -> {
+            try {
+                executeWithRetry(() -> {
+                    operation.run();
+                    return null;
+                }, "Async Void Operation");
+            } catch (Exception e) {
+                log.error("Async void operation failed", e);
+                throw new RuntimeException("Async void operation failed after retries", e);
+            }
+        }, executor);
     }
 
     /**
@@ -222,14 +158,7 @@ public class AsyncSQLWrapper {
      */
     public <T> List<T> executeBatch(List<Callable<T>> operations) {
         List<CompletableFuture<T>> futures = operations.stream()
-                .map(op -> CompletableFuture.supplyAsync(() -> {
-                    try {
-                        return executeWithRetry(op, "Batch Operation");
-                    } catch (Exception e) {
-                        log.error("Batch operation failed", e);
-                        throw new RuntimeException(e);
-                    }
-                }, executor))
+                .map(this::executeAsync)
                 .collect(Collectors.toList());
 
         return futures.stream()
@@ -237,10 +166,4 @@ public class AsyncSQLWrapper {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * 一个私有静态内部类，作为void方法执行成功的标记。使用具体类而不是Object，是为了避免与任何有效的业务对象混淆。
-     */
-    private static final class VoidOperationResult {
-        // 这个类没有内容，只作为类型标记。
-    }
 }

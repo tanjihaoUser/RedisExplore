@@ -23,7 +23,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 帖子管理控制器
+ * 使用list存储用户帖子之间的关系
  */
 @Slf4j
 @RestController

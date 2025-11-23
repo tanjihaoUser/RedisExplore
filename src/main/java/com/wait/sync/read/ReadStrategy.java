@@ -2,11 +2,11 @@ package com.wait.sync.read;
 
 import com.wait.entity.CacheSyncParam;
 import com.wait.entity.type.ReadStrategyType;
-import org.aspectj.lang.ProceedingJoinPoint;
+import com.wait.sync.MethodExecutor;
 
 // 读写分离设计
 public interface ReadStrategy {
-    <T> T read(CacheSyncParam<T> param, ProceedingJoinPoint joinPoint);
+    <T> T read(CacheSyncParam<T> param, MethodExecutor methodExecutor);
 
     ReadStrategyType getStrategyType();
 }

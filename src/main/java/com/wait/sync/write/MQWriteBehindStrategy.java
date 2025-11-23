@@ -1,16 +1,16 @@
 package com.wait.sync.write;
 
 import com.wait.entity.CacheSyncParam;
-import com.wait.service.MQService;
-import com.wait.util.message.AsyncDataMsg;
 import com.wait.entity.type.DataOperationType;
 import com.wait.entity.type.WriteStrategyType;
+import com.wait.service.MQService;
+import com.wait.sync.MethodExecutor;
 import com.wait.util.AsyncSQLWrapper;
 import com.wait.util.BoundUtil;
+import com.wait.util.message.AsyncDataMsg;
 import com.wait.util.message.CompensationMsg;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.aspectj.lang.ProceedingJoinPoint;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
@@ -30,7 +30,7 @@ public class MQWriteBehindStrategy implements WriteStrategy {
     private final AsyncSQLWrapper asyncSQLWrapper;
 
     @Override
-    public void write(CacheSyncParam param, ProceedingJoinPoint joinPoint) {
+    public void write(CacheSyncParam<?> param, MethodExecutor methodExecutor) {
         try {
             // 1. 立即写入缓存
             if (param.getNewValue() != null) {
@@ -39,19 +39,20 @@ public class MQWriteBehindStrategy implements WriteStrategy {
             }
 
             // 2. 发送消息到MQ（异步更新数据库）
-            AsyncDataMsg task = new AsyncDataMsg(DataOperationType.UPDATE, param);
+            @SuppressWarnings("unchecked")
+            AsyncDataMsg<Object> task = new AsyncDataMsg<>(DataOperationType.UPDATE, (CacheSyncParam<Object>) param);
             mqService.sendMessage(extractEntityType(param), param.getKey(), task);
 
             log.debug("MQ Write-Behind: 更新消息已发送, key: {}", param.getKey());
 
         } catch (Exception e) {
             log.error("MQ Write-Behind写入失败, key: {}", param.getKey(), e);
-            handleWriteFailure(param, joinPoint, e);
+            handleWriteFailure(param, methodExecutor, e);
         }
     }
 
     @Override
-    public void delete(CacheSyncParam param, ProceedingJoinPoint joinPoint) {
+    public void delete(CacheSyncParam<?> param, MethodExecutor methodExecutor) {
         try {
             String key = param.getKey();
             // 1. 立即删除缓存
@@ -59,32 +60,34 @@ public class MQWriteBehindStrategy implements WriteStrategy {
             log.debug("MQ Write-Behind: 缓存删除成功, key: {}", key);
 
             // 2. 发送删除消息到MQ
-            AsyncDataMsg<Object> task = new AsyncDataMsg<>(DataOperationType.DELETE, param);
+            @SuppressWarnings("unchecked")
+            AsyncDataMsg<Object> task = new AsyncDataMsg<>(DataOperationType.DELETE, (CacheSyncParam<Object>) param);
             mqService.sendMessage(extractEntityType(param), key, task);
 
             log.debug("MQ Write-Behind: 删除消息已发送, key: {}", key);
 
         } catch (Exception e) {
             log.error("MQ Write-Behind删除失败, key: {}", param.getKey(), e);
-            handleWriteFailure(param, joinPoint, e);
+            handleWriteFailure(param, methodExecutor, e);
         }
     }
 
     /**
      * 统一的失败处理
      */
-    private void handleWriteFailure(CacheSyncParam param, ProceedingJoinPoint joinPoint, Exception e) {
+    private void handleWriteFailure(CacheSyncParam<?> param, MethodExecutor methodExecutor, Exception e) {
         try {
-            asyncSQLWrapper.executeAspectMethod(param, joinPoint);
+            asyncSQLWrapper.executeAspectMethod(param, methodExecutor);
             log.info("降级同步写入成功, key: {}", param.getKey());
         } catch (Exception ex) {
             log.error("同步写入也失败, 保存到死信队列, key: {}", param.getKey(), ex);
-            CompensationMsg compensationMsg = new CompensationMsg(param, ex.getMessage(), System.currentTimeMillis());
+            @SuppressWarnings("unchecked")
+            CompensationMsg<Object> compensationMsg = new CompensationMsg<>((CacheSyncParam<Object>) param, ex.getMessage(), System.currentTimeMillis());
             mqService.sendDLMessage(param.getKey(), compensationMsg);
         }
     }
 
-    private String extractEntityType(CacheSyncParam param) {
+    private String extractEntityType(CacheSyncParam<?> param) {
         String type = param.getClazz().toString();
         int beginInd = type.indexOf(".");
         return beginInd == -1 ? "Unknown" : type.substring(beginInd + 1) + "_topic";

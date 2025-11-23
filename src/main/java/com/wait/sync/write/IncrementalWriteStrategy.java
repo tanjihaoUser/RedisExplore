@@ -1,7 +1,5 @@
 package com.wait.sync.write;
 
-import java.lang.annotation.Annotation;
-import java.lang.reflect.Method;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -9,15 +7,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.ibatis.annotations.Param;
-import org.aspectj.lang.ProceedingJoinPoint;
-import org.aspectj.lang.reflect.MethodSignature;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.stereotype.Component;
 
 import com.wait.entity.CacheSyncParam;
 import com.wait.entity.type.WriteStrategyType;
+import com.wait.sync.MethodExecutor;
 import com.wait.util.BoundUtil;
 
 import lombok.AllArgsConstructor;
@@ -50,18 +46,18 @@ public class IncrementalWriteStrategy implements WriteStrategy {
     private final Map<String, ScheduledFuture<?>> flushTasks = new ConcurrentHashMap<>();
 
     @Override
-    public void write(CacheSyncParam param, ProceedingJoinPoint joinPoint) {
+    public void write(CacheSyncParam<?> param, MethodExecutor methodExecutor) {
         String key = param.getKey();
 
         try {
-            // 1. 解析参数中的“多属性变更”，区分：增量字段 与 覆盖字段
-            ChangeBundle changeBundle = parseChangeBundle(joinPoint);
+            // 1. 解析参数中的"多属性变更"，区分：增量字段 与 覆盖字段
+            ChangeBundle changeBundle = parseChangeBundle(methodExecutor);
 
             // 2. 立即更新Redis（能识别的场景尽量更新，识别不了则延后以DB为准）
-            updateRedisImmediately(key, changeBundle, param, joinPoint);
+            updateRedisImmediately(key, changeBundle, param, methodExecutor);
 
             // 3. 缓冲任务（对同一key进行合并：增量相加、覆盖取最近值）
-            bufferIncrementalTask(key, changeBundle, joinPoint);
+            bufferIncrementalTask(key, changeBundle, methodExecutor);
 
             // 4. 启动定时刷库任务（统一由定时任务执行数据库写入）
             // 中间更新多次都放到IncrementalTask中，写入数据库时根据key获取，定时任务不用改动
@@ -78,7 +74,7 @@ public class IncrementalWriteStrategy implements WriteStrategy {
 
     // 删除操作直接执行，不进行缓冲
     @Override
-    public void delete(CacheSyncParam param, ProceedingJoinPoint joinPoint) {
+    public void delete(CacheSyncParam<?> param, MethodExecutor methodExecutor) {
         try {
             // 1. 删除Redis缓存
             boundUtil.del(param.getKey());
@@ -88,7 +84,7 @@ public class IncrementalWriteStrategy implements WriteStrategy {
             cancelFlushTask(param.getKey());
 
             // 3. 执行原始删除方法
-            joinPoint.proceed();
+            methodExecutor.execute();
 
             log.debug("IncrementalWrite: Delete completed, key: {}", param.getKey());
 
@@ -101,11 +97,11 @@ public class IncrementalWriteStrategy implements WriteStrategy {
     /**
      * 缓冲增量/覆盖任务
      */
-    private void bufferIncrementalTask(String key, ChangeBundle changeBundle, ProceedingJoinPoint joinPoint) {
+    private void bufferIncrementalTask(String key, ChangeBundle changeBundle, MethodExecutor methodExecutor) {
         taskBuffer.compute(key, (k, existingTask) -> {
             if (existingTask == null) {
                 long now = System.currentTimeMillis();
-                IncrementalTask task = new IncrementalTask(joinPoint, new HashMap<>(), new HashMap<>(), now, now);
+                IncrementalTask task = new IncrementalTask(methodExecutor, new HashMap<>(), new HashMap<>(), now, now);
                 mergeIntoTask(task, changeBundle);
                 log.debug("create new incremental task, key: {}, time: {}", key, now);
                 return task;
@@ -192,10 +188,10 @@ public class IncrementalWriteStrategy implements WriteStrategy {
             // 基于原始参数进行合并：
             // 数值型增量：用累计增量替换对应参数（由SQL执行 "col = col + #{arg}"）
             // 覆盖型字段：用最新值替换对应参数
-            Object[] modifiedArgs = modifyJoinPointArgs(task);
+            Object[] modifiedArgs = modifyMethodArgs(task);
 
             // 使用修改后的参数执行原始MyBatis方法
-            task.getJoinPoint().proceed(modifiedArgs);
+            task.getMethodExecutor().execute(modifiedArgs);
 
             log.info("IncrementalWrite Flushed to database, key: {}, deltaArgs: {}, latestArgs: {}",
                     key, task.getNumericDeltas().keySet(), task.getLatestValues().keySet());
@@ -217,21 +213,20 @@ public class IncrementalWriteStrategy implements WriteStrategy {
     }
 
     /**
-     * 修改JoinPoint参数 - 关键实现
-     * ProceedingJoinPoint.getArgs() 返回的数组可能是一个副本，也可能是原始数组的引用。
+     * 修改方法参数 - 关键实现
+     * MethodExecutor.getArgs() 返回的数组可能是一个副本，也可能是原始数组的引用。
      * 不能直接使用，需要复制一份。
      */
-    private Object[] modifyJoinPointArgs(IncrementalTask task) {
-        ProceedingJoinPoint joinPoint = task.getJoinPoint();
-        Object[] originalArgs = joinPoint.getArgs();
+    private Object[] modifyMethodArgs(IncrementalTask task) {
+        MethodExecutor methodExecutor = task.getMethodExecutor();
+        Object[] originalArgs = methodExecutor.getArgs();
         Object[] modifiedArgs = new Object[originalArgs.length];
 
         // 复制原始参数
         System.arraycopy(originalArgs, 0, modifiedArgs, 0, originalArgs.length);
 
         // 读取目标方法参数类型
-        MethodSignature ms = (MethodSignature) joinPoint.getSignature();
-        Class<?>[] paramTypes = ms.getMethod().getParameterTypes();
+        Class<?>[] paramTypes = methodExecutor.getMethod().getParameterTypes();
 
         // 先应用覆盖型字段（最新值）
         for (Map.Entry<Integer, Object> e : task.getLatestValues().entrySet()) {
@@ -299,8 +294,8 @@ public class IncrementalWriteStrategy implements WriteStrategy {
     // 参数索引0通常为主键，保留不动
     // 对于 Number 类型参数：视为增量；若被判定为"时间戳"，则作为覆盖
     // 对于非 Number：作为覆盖型字段
-    private ChangeBundle parseChangeBundle(ProceedingJoinPoint joinPoint) {
-        Object[] args = joinPoint.getArgs();
+    private ChangeBundle parseChangeBundle(MethodExecutor methodExecutor) {
+        Object[] args = methodExecutor.getArgs();
         Map<Integer, Number> numericIncrements = new HashMap<>();
         Map<Integer, Object> latestReplacements = new HashMap<>();
 
@@ -338,8 +333,8 @@ public class IncrementalWriteStrategy implements WriteStrategy {
         return val > 1_000_000_000_00L; // 10^11
     }
 
-    private void updateRedisImmediately(String key, ChangeBundle changeBundle, CacheSyncParam param,
-            ProceedingJoinPoint joinPoint) {
+    private void updateRedisImmediately(String key, ChangeBundle changeBundle, CacheSyncParam<?> param,
+            MethodExecutor methodExecutor) {
         try {
             // 仅在可明确映射的情况下执行即时更新，避免误写
             switch (param.getCacheType()) {
@@ -369,7 +364,7 @@ public class IncrementalWriteStrategy implements WriteStrategy {
                     }
                     break;
                 case HASH: {
-                    Map<Integer, String> idxToName = getParamIndexToName(joinPoint);
+                    Map<Integer, String> idxToName = methodExecutor.getParamIndexToName();
                     // 批量覆盖：聚合为一次 HMSET
                     Map<String, Object> setMap = new HashMap<>();
                     for (Map.Entry<Integer, Object> e : changeBundle.latestReplacements.entrySet()) {
@@ -445,7 +440,7 @@ public class IncrementalWriteStrategy implements WriteStrategy {
     @Data
     @AllArgsConstructor
     private static class IncrementalTask {
-        private ProceedingJoinPoint joinPoint;
+        private MethodExecutor methodExecutor;
         // 参数下标 -> 累计增量值（用于 SQL: col = col + #{arg} 的参数）
         // 存储原始 Number 类型，避免精度丢失（Long, Integer, Double, Float等）
         private Map<Integer, Number> numericDeltas;
@@ -471,48 +466,4 @@ public class IncrementalWriteStrategy implements WriteStrategy {
         }
     }
 
-    /**
-     * 解析位置到参数名的映射（通常第0个参数为主键，这里也解析出来，调用侧可忽略）
-     * 基于 MyBatis @Param 注解解析“参数下标 -> 参数名”
-     * 没有注解使用参数名，参数名解析失败使用默认命名（arg0, arg1, ...）
-     */
-    private Map<Integer, String> getParamIndexToName(ProceedingJoinPoint joinPoint) {
-        Map<Integer, String> map = new HashMap<>();
-        try {
-            MethodSignature ms = (MethodSignature) joinPoint.getSignature();
-            Method method = ms.getMethod();
-
-            // 获取参数名（需要编译时开启参数名保留）
-            String[] parameterNames = ms.getParameterNames();
-            Annotation[][] parameterAnnotations = method.getParameterAnnotations();
-
-            for (int i = 0; i < parameterAnnotations.length; i++) {
-                String paramName = null;
-
-                // 1. 优先使用 @Param 注解的值
-                for (Annotation annotation : parameterAnnotations[i]) {
-                    if (annotation instanceof Param) {
-                        paramName = ((Param) annotation).value();
-                        break;
-                    }
-                }
-
-                // 2. 如果没有 @Param 注解，使用参数名
-                if (paramName == null && parameterNames != null && i < parameterNames.length) {
-                    paramName = parameterNames[i];
-                }
-
-                // 3. 如果参数名也不可用，使用默认命名（参数索引）
-                if (paramName == null) {
-                    paramName = "arg" + i;
-                }
-
-                map.put(i, paramName);
-            }
-
-        } catch (Exception e) {
-            log.warn("解析参数名失败: {}", e.getMessage());
-        }
-        return map;
-    }
 }

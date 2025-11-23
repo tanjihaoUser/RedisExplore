@@ -10,7 +10,6 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 
-import com.wait.config.script.LuaScriptConfig;
 import com.wait.util.BoundUtil;
 
 import lombok.extern.slf4j.Slf4j;
@@ -27,7 +26,8 @@ public class SlideWindow extends RateLimiter {
 
     private final DefaultRedisScript<Long> slideWindowScript;
 
-    public SlideWindow(BoundUtil boundUtil, @Qualifier(RateLimitScripts.SLIDE_WINDOW) DefaultRedisScript<Long> slideWindowScript) {
+    public SlideWindow(BoundUtil boundUtil,
+            @Qualifier(RateLimitScripts.SLIDE_WINDOW) DefaultRedisScript<Long> slideWindowScript) {
         super(boundUtil);
         this.slideWindowScript = slideWindowScript;
     }

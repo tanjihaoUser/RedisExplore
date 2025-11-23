@@ -9,7 +9,6 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 
-import com.wait.config.script.LuaScriptConfig;
 import com.wait.util.BoundUtil;
 
 import lombok.extern.slf4j.Slf4j;
@@ -26,7 +25,8 @@ public class TokenBucket extends RateLimiter {
 
     private final DefaultRedisScript<Long> tokenBucketScript;
 
-    public TokenBucket(BoundUtil boundUtil, @Qualifier(RateLimitScripts.TOKEN_BUCKET) DefaultRedisScript<Long> tokenBucketScript) {
+    public TokenBucket(BoundUtil boundUtil,
+            @Qualifier(RateLimitScripts.TOKEN_BUCKET) DefaultRedisScript<Long> tokenBucketScript) {
         super(boundUtil);
         this.tokenBucketScript = tokenBucketScript;
     }

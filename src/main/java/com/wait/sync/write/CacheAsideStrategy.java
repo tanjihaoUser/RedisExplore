@@ -2,11 +2,11 @@ package com.wait.sync.write;
 
 import com.wait.entity.CacheSyncParam;
 import com.wait.entity.type.WriteStrategyType;
+import com.wait.sync.MethodExecutor;
 import com.wait.util.AsyncSQLWrapper;
 import com.wait.util.BoundUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.aspectj.lang.ProceedingJoinPoint;
 import org.springframework.stereotype.Component;
 
 /**
@@ -22,10 +22,10 @@ public class CacheAsideStrategy implements WriteStrategy {
     private final AsyncSQLWrapper asyncSQLWrapper;
 
     @Override
-    public void write(CacheSyncParam param, ProceedingJoinPoint joinPoint) {
+    public void write(CacheSyncParam<?> param, MethodExecutor methodExecutor) {
         try {
             // 1. 先执行数据库操作
-            asyncSQLWrapper.executeAspectMethod(param, joinPoint);
+            asyncSQLWrapper.executeAspectMethod(param, methodExecutor);
 
             // 2. 删除缓存（Cache-Aside模式）
             boundUtil.del(param.getKey());
@@ -39,10 +39,10 @@ public class CacheAsideStrategy implements WriteStrategy {
     }
 
     @Override
-    public void delete(CacheSyncParam param, ProceedingJoinPoint joinPoint) {
+    public void delete(CacheSyncParam<?> param, MethodExecutor methodExecutor) {
         try {
             // 1. 先执行数据库删除
-            asyncSQLWrapper.executeAspectMethod(param, joinPoint);
+            asyncSQLWrapper.executeAspectMethod(param, methodExecutor);
 
             // 2. 删除缓存
             boundUtil.del(param.getKey());

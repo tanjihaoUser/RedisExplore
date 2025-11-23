@@ -4,6 +4,8 @@ import com.wait.annotation.RedisCache;
 import com.wait.entity.CacheSyncParam;
 import com.wait.entity.type.WriteStrategyType;
 import com.wait.sync.CacheStrategyFactory;
+import com.wait.sync.MethodExecutor;
+import com.wait.sync.ProceedingJoinPointMethodExecutor;
 import com.wait.sync.read.ReadStrategy;
 import com.wait.sync.write.WriteStrategy;
 import com.wait.util.SpelExpressionParserUtil;
@@ -12,7 +14,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
-import org.aspectj.lang.reflect.MethodSignature;
 import org.springframework.stereotype.Component;
 
 @Aspect
@@ -29,11 +30,14 @@ public class RedisCacheAspect {
         String key = spelExpressionParserUtil.generateCacheKey(joinPoint, redisCache.key(), redisCache.prefix());
         log.debug("aspect handle cache, key: {}, redisCache: {}", key, redisCache);
         CacheSyncParam<Object> cacheSyncParam = CacheSyncParam.getFromRedisCache(key, redisCache);
+        
+        // 将ProceedingJoinPoint包装为MethodExecutor
+        MethodExecutor methodExecutor = new ProceedingJoinPointMethodExecutor(joinPoint);
 
         switch (redisCache.operation()) {
             case SELECT:
                 ReadStrategy strategy = cacheStrategyFactory.getReadStrategy(redisCache.readStrategy());
-                return strategy.read(cacheSyncParam, joinPoint);
+                return strategy.read(cacheSyncParam, methodExecutor);
             case UPDATE:
             case DELETE:
                 WriteStrategy writeStrategy = cacheStrategyFactory.getWriteStrategy(redisCache.writeStrategy());
@@ -42,16 +46,16 @@ public class RedisCacheAspect {
                 // 由于未执行实际方法，需要返回合适的默认值，避免返回null导致原始方法签名不匹配
                 if (redisCache.writeStrategy() == WriteStrategyType.INCREMENTAL_WRITE_BEHIND ||
                     redisCache.writeStrategy() == WriteStrategyType.SNAPSHOT_WRITE_BEHIND) {
-                    writeStrategy.write(cacheSyncParam, joinPoint);
-                    return getDefaultReturnValue(joinPoint);
+                    writeStrategy.write(cacheSyncParam, methodExecutor);
+                    return getDefaultReturnValue(methodExecutor);
                 } else {
                     // 其他写策略：策略类内部会执行数据库操作
-                    writeStrategy.write(cacheSyncParam, joinPoint);
+                    writeStrategy.write(cacheSyncParam, methodExecutor);
                     // 返回目标方法的执行结果（对于非void方法如int/Integer，避免返回null导致原始方法签名不匹配）
                     Object result = cacheSyncParam.getNewValue();
                     // 如果策略未设置返回值，返回默认值（兼容某些策略可能不设置返回值的情况）
                     if (result == null) {
-                        return getDefaultReturnValue(joinPoint);
+                        return getDefaultReturnValue(methodExecutor);
                     }
                     return result;
                 }
@@ -64,9 +68,8 @@ public class RedisCacheAspect {
      * 获取方法的默认返回值，对于定时写回策略，由于不立即执行数据库操作，需要返回合适的默认值
      * 避免返回null导致原始方法签名不匹配（特别是对于原始返回类型如 int）
      */
-    private Object getDefaultReturnValue(ProceedingJoinPoint joinPoint) {
-        MethodSignature signature = (MethodSignature) joinPoint.getSignature();
-        Class<?> returnType = signature.getReturnType();
+    private Object getDefaultReturnValue(MethodExecutor methodExecutor) {
+        Class<?> returnType = methodExecutor.getMethod().getReturnType();
         
         // 如果返回类型是基本类型，返回对应的默认值；否则返回null
         if (returnType == void.class || returnType == Void.class) {

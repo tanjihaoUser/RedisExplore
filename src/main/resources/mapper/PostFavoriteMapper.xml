@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.wait.mapper.PostFavoriteMapper">
+
+    <insert id="insert">
+        INSERT INTO post_favorite (user_id, post_id, created_at) 
+        VALUES (#{userId}, #{postId}, #{createdAt})
+    </insert>
+
+    <delete id="delete">
+        DELETE FROM post_favorite WHERE user_id = #{userId} AND post_id = #{postId}
+    </delete>
+
+    <select id="exists" resultType="boolean">
+        SELECT COUNT(*) > 0 FROM post_favorite WHERE user_id = #{userId} AND post_id = #{postId}
+    </select>
+
+    <select id="countByPostId" resultType="int">
+        SELECT COUNT(*) FROM post_favorite WHERE post_id = #{postId}
+    </select>
+
+    <select id="selectPostIdsByUserId" resultType="java.lang.Long">
+        SELECT post_id FROM post_favorite WHERE user_id = #{userId}
+    </select>
+
+    <!-- 批量查询存在性：返回已存在的 (userId, postId) 对 -->
+    <select id="batchExists" resultType="com.wait.entity.domain.PostFavorite">
+        SELECT user_id AS userId, post_id AS postId
+        FROM post_favorite
+        WHERE (user_id, post_id) IN
+        <foreach collection="favorites" item="item" open="(" separator="," close=")">
+            (#{item.userId}, #{item.postId})
+        </foreach>
+    </select>
+
+    <insert id="batchInsert">
+        INSERT INTO post_favorite (user_id, post_id, created_at) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{item.userId}, #{item.postId}, #{item.createdAt})
+        </foreach>
+    </insert>
+
+</mapper>
+

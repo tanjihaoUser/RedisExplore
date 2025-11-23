@@ -20,4 +20,21 @@
         SELECT COUNT(*) FROM post_like WHERE post_id = #{postId}
     </select>
 
+    <!-- 批量查询存在性：返回已存在的 (postId, userId) 对 -->
+    <select id="batchExists" resultType="com.wait.entity.domain.PostLike">
+        SELECT post_id AS postId, user_id AS userId
+        FROM post_like
+        WHERE (post_id, user_id) IN
+        <foreach collection="likes" item="item" open="(" separator="," close=")">
+            (#{item.postId}, #{item.userId})
+        </foreach>
+    </select>
+
+    <insert id="batchInsert">
+        INSERT INTO post_like (post_id, user_id) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{item.postId}, #{item.userId})
+        </foreach>
+    </insert>
+
 </mapper>

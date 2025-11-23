@@ -8,10 +8,11 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.aspectj.lang.ProceedingJoinPoint;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.stereotype.Component;
+
+import com.wait.sync.MethodExecutor;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -44,18 +45,18 @@ public class SnapshotWriteStrategy implements WriteStrategy {
     private final Map<String, ScheduledFuture<?>> flushTasks = new ConcurrentHashMap<>();
 
     @Override
-    public void write(CacheSyncParam param, ProceedingJoinPoint joinPoint) {
+    public void write(CacheSyncParam<?> param, MethodExecutor methodExecutor) {
         String key = param.getKey();
 
         try {
             // 1. 解析更新的实体对象
-            Object updatedEntity = parseEntityFromArgs(joinPoint);
+            Object updatedEntity = parseEntityFromArgs(methodExecutor);
 
             // 2. 立即更新Redis Hash
             updateRedisHashImmediately(key, updatedEntity, param);
 
             // 3. 缓冲实体快照
-            bufferSnapshotTask(key, updatedEntity, joinPoint);
+            bufferSnapshotTask(key, updatedEntity, methodExecutor);
 
             // 4. 启动定时刷库任务（统一由定时任务执行数据库写入）
             scheduleFlushTask(key);
@@ -69,12 +70,12 @@ public class SnapshotWriteStrategy implements WriteStrategy {
     }
 
     @Override
-    public void delete(CacheSyncParam param, ProceedingJoinPoint joinPoint) {
+    public void delete(CacheSyncParam<?> param, MethodExecutor methodExecutor) {
         try {
             boundUtil.del(param.getKey());
             snapshotBuffer.remove(param.getKey());
             cancelFlushTask(param.getKey());
-            joinPoint.proceed();
+            methodExecutor.execute();
             log.debug("SnapshotWrite: Delete completed, key: {}", param.getKey());
         } catch (Throwable e) {
             log.error("SnapshotWrite: Delete failed, key: {}", param.getKey(), e);
@@ -85,14 +86,14 @@ public class SnapshotWriteStrategy implements WriteStrategy {
     /**
      * 缓冲快照任务
      */
-    private void bufferSnapshotTask(String key, Object newEntity, ProceedingJoinPoint joinPoint) {
+    private void bufferSnapshotTask(String key, Object newEntity, MethodExecutor methodExecutor) {
         snapshotBuffer.compute(key, (k, existingTask) -> {
             if (existingTask == null) {
                 log.debug("SnapshotWrite New snapshot task, key: {}, entity: {}, time: {}", key, newEntity,
                         System.currentTimeMillis());
-                return new SnapshotTask(joinPoint, newEntity, System.currentTimeMillis());
+                return new SnapshotTask(methodExecutor, newEntity, System.currentTimeMillis());
             } else {
-                // 合并更新：用新实体替换旧实体，保留joinPoint
+                // 合并更新：用新实体替换旧实体，保留methodExecutor
                 existingTask.setLatestEntity(mergeEntities(existingTask.getLatestEntity(), newEntity));
                 existingTask.setLastUpdateTime(System.currentTimeMillis());
                 log.debug("SnapshotWrite refresh snapshot task, key: {}, entity: {}, time: {}", key, newEntity,
@@ -123,11 +124,11 @@ public class SnapshotWriteStrategy implements WriteStrategy {
         flushTasks.remove(key);
 
         try {
-            // 修改joinPoint参数：使用最新的实体状态
-            Object[] modifiedArgs = modifyJoinPointArgs(task.getJoinPoint(), task.getLatestEntity());
+            // 修改方法参数：使用最新的实体状态
+            Object[] modifiedArgs = modifyMethodArgs(task.getMethodExecutor(), task.getLatestEntity());
 
             // 执行更新
-            task.getJoinPoint().proceed(modifiedArgs);
+            task.getMethodExecutor().execute(modifiedArgs);
 
             log.info("SnapshotWrite: Flushed to database, key: {}", key);
 
@@ -147,10 +148,10 @@ public class SnapshotWriteStrategy implements WriteStrategy {
     }
 
     /**
-     * 修改JoinPoint参数
+     * 修改方法参数
      */
-    private Object[] modifyJoinPointArgs(ProceedingJoinPoint joinPoint, Object latestEntity) {
-        Object[] originalArgs = joinPoint.getArgs();
+    private Object[] modifyMethodArgs(MethodExecutor methodExecutor, Object latestEntity) {
+        Object[] originalArgs = methodExecutor.getArgs();
         Object[] modifiedArgs = new Object[originalArgs.length];
 
         System.arraycopy(originalArgs, 0, modifiedArgs, 0, originalArgs.length);
@@ -164,12 +165,12 @@ public class SnapshotWriteStrategy implements WriteStrategy {
     }
 
     // 其他辅助方法...
-    private Object parseEntityFromArgs(ProceedingJoinPoint joinPoint) {
-        Object[] args = joinPoint.getArgs();
+    private Object parseEntityFromArgs(MethodExecutor methodExecutor) {
+        Object[] args = methodExecutor.getArgs();
         return args != null && args.length > 0 ? args[0] : null;
     }
 
-    private void updateRedisHashImmediately(String key, Object entity, CacheSyncParam param) {
+    private void updateRedisHashImmediately(String key, Object entity, CacheSyncParam<?> param) {
         // 将实体转换为Map存储到Redis Hash
         Map<String, Object> fieldMap = hashMappingUtil.objectToMap(entity);
         if (!fieldMap.isEmpty()) {
@@ -234,7 +235,7 @@ public class SnapshotWriteStrategy implements WriteStrategy {
     @Data
     @AllArgsConstructor
     private static class SnapshotTask {
-        private ProceedingJoinPoint joinPoint;
+        private MethodExecutor methodExecutor;
         private Object latestEntity;
         private long lastUpdateTime;
     }

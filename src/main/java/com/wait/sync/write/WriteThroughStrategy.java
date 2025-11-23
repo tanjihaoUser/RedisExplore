@@ -2,11 +2,11 @@ package com.wait.sync.write;
 
 import com.wait.entity.CacheSyncParam;
 import com.wait.entity.type.WriteStrategyType;
+import com.wait.sync.MethodExecutor;
 import com.wait.util.AsyncSQLWrapper;
 import com.wait.util.BoundUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.aspectj.lang.ProceedingJoinPoint;
 import org.springframework.stereotype.Component;
 
 /**
@@ -22,19 +22,21 @@ public class WriteThroughStrategy implements WriteStrategy {
     private final AsyncSQLWrapper asyncSQLWrapper;
 
     @Override
-    public void write(CacheSyncParam param, ProceedingJoinPoint joinPoint) {
+    public void write(CacheSyncParam<?> param, MethodExecutor methodExecutor) {
         try {
             // 默认使用第一个方法参数作为缓存值
-            Object[] args = joinPoint.getArgs();
+            Object[] args = methodExecutor.getArgs();
             if (args != null && args.length > 0) {
-                param.setNewValue(args[0]);
+                @SuppressWarnings("unchecked")
+                CacheSyncParam<Object> objectParam = (CacheSyncParam<Object>) param;
+                objectParam.setNewValue(args[0]);
             }
 
             // 1. 先更新缓存
             boundUtil.writeWithRetry(param, 3);
 
             // 2. 再更新数据库
-            asyncSQLWrapper.executeAspectMethod(param, joinPoint);
+            asyncSQLWrapper.executeAspectMethod(param, methodExecutor);
 
             log.debug("Write-Through write strategy execute completed, key: {}", param.getKey());
 
@@ -47,10 +49,10 @@ public class WriteThroughStrategy implements WriteStrategy {
     }
 
     @Override
-    public void delete(CacheSyncParam param, ProceedingJoinPoint joinPoint) {
+    public void delete(CacheSyncParam<?> param, MethodExecutor methodExecutor) {
         boundUtil.del(param.getKey());
 
-        asyncSQLWrapper.executeAspectMethod(param, joinPoint);
+        asyncSQLWrapper.executeAspectMethod(param, methodExecutor);
 
         log.debug("Write-Through delete strategy execute completed, key: {}", param.getKey());
 
